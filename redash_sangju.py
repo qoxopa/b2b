@@ -53,7 +53,7 @@ selected_sigungu = st.sidebar.multiselect("시군구 선택", sigungu_list, defa
 # 🚨 4) 주문 활성 상점 필터 (영업 타겟 발굴용!)
 st.sidebar.markdown("---")
 st.sidebar.subheader("📈 상점 활동성 필터")
-only_active = st.sidebar.checkbox("최근 한 달 주문 1건 이상인 상점만 보기", value=False)
+only_active = st.sidebar.checkbox("최근 한 달 주문 발생 상점 보기", value=False)
 
 # ==========================================
 # 4. 데이터 필터링 적용
