@@ -93,43 +93,6 @@ if not filtered_df.empty:
         st.metric("상점기반(타겟)", f"{store_fee_count:,}개", delta="미전환", delta_color="inverse")
     
     st.markdown("<br>", unsafe_allow_html=True) # 살짝 여백 주기
-    
-# 2. 획기적인 가로형 막대그래프 (가독성 & 영업 타겟팅 끝판왕!)
-    st.markdown("<br>", unsafe_allow_html=True) # 살짝 여백 주기
-    
-    # 데이터 가공: 브랜드별로 '상점요금제(빨간색)'가 몇 개인지 세서 정렬 기준으로 삼기!
-    insight_df = filtered_df.groupby(['상점관리주체(브랜드)', '매입타입']).size().reset_index(name='상점수')
-    
-    # 빨간색(타겟) 개수 구하기
-    target_count = insight_df[insight_df['매입타입'] == '배달대행사요금제(상점)'].rename(columns={'상점수': '타겟수'})
-    insight_df = pd.merge(insight_df, target_count[['상점관리주체(브랜드)', '타겟수']], on='상점관리주체(브랜드)', how='left').fillna(0)
-
-    # 타겟수(빨간색)가 많은 순서대로 정렬! 
-    # (Plotly 가로형 그래프는 밑에서부터 위로 그려지므로 오름차순(True)으로 해야 제일 큰 게 맨 위에 옴!)
-    insight_df = insight_df.sort_values(by=['타겟수', '상점수'], ascending=[True, True])
-
-    # 획기적인 변화: x축 y축 뒤집기 (orientation='h')
-    fig_bar = px.bar(
-        insight_df, 
-        y='상점관리주체(브랜드)',  # Y축에 브랜드명 눕혀서 배치 (글씨 절대 안 짤림!)
-        x='상점수',              # X축에 개수
-        color='매입타입', 
-        orientation='h',        # ⭐️ 가로형 그래프로 변신하는 핵심 마법!
-        title="🎯 브랜드별 전환 현황",
-        color_discrete_map={"고릴라지역요금제(주소)": "#2ecc71", "배달대행사요금제(상점)": "#e74c3c"},
-        text_auto=True
-    )
-    
-    # ⭐️ 잼민이의 디테일: 검색된 브랜드 개수에 따라 그래프 세로 길이를 자동으로 늘려줌!
-    brand_count = len(insight_df['상점관리주체(브랜드)'].unique())
-    fig_bar.update_layout(
-        height=max(400, brand_count * 30), # 브랜드 하나당 30픽셀씩 넉넉하게 공간 확보
-        yaxis_title=None,
-        xaxis_title="상점 수",
-        showlegend=True
-    )
-    
-    st.plotly_chart(fig_bar, use_container_width=True)
 
 # ==========================================
 # 6. 📍 상세 지도 (색상: 요금제 종류 구분)
@@ -270,7 +233,48 @@ else:
     st.info("현재 선택된 필터 내에는 주소요금제로 전환된 상점이 없습니다. 😭")
 
 # ==========================================
-# 7. 데이터 리스트 다운로드
+# 7. 🎯 획기적인 가로형 막대그래프 (브랜드별 전체 현황)
+# ==========================================
+st.markdown("---")
+st.subheader("🎯 브랜드별 요금제 전환 전체 현황 (가로형 차트)")
+
+if not filtered_df.empty:
+    # 데이터 가공: 브랜드별로 '상점요금제(빨간색)'가 몇 개인지 세서 정렬 기준으로 삼기!
+    insight_df = filtered_df.groupby(['상점관리주체(브랜드)', '매입타입']).size().reset_index(name='상점수')
+    
+    # 빨간색(타겟) 개수 구하기
+    target_count = insight_df[insight_df['매입타입'] == '배달대행사요금제(상점)'].rename(columns={'상점수': '타겟수'})
+    insight_df = pd.merge(insight_df, target_count[['상점관리주체(브랜드)', '타겟수']], on='상점관리주체(브랜드)', how='left').fillna(0)
+
+    # 타겟수(빨간색)가 많은 순서대로 정렬! 
+    # (Plotly 가로형 그래프는 밑에서부터 위로 그려지므로 오름차순(True)으로 해야 제일 큰 게 맨 위에 옴!)
+    insight_df = insight_df.sort_values(by=['타겟수', '상점수'], ascending=[True, True])
+
+    # 획기적인 변화: x축 y축 뒤집기 (orientation='h')
+    fig_bar = px.bar(
+        insight_df, 
+        y='상점관리주체(브랜드)',  # Y축에 브랜드명 눕혀서 배치 (글씨 절대 안 짤림!)
+        x='상점수',              # X축에 개수
+        color='매입타입', 
+        orientation='h',        # ⭐️ 가로형 그래프로 변신하는 핵심 마법!
+        title="🎯 브랜드별 전환 현황",
+        color_discrete_map={"고릴라지역요금제(주소)": "#2ecc71", "배달대행사요금제(상점)": "#e74c3c"},
+        text_auto=True
+    )
+    
+    # ⭐️ 잼민이의 디테일: 검색된 브랜드 개수에 따라 그래프 세로 길이를 자동으로 늘려줌!
+    brand_count = len(insight_df['상점관리주체(브랜드)'].unique())
+    fig_bar.update_layout(
+        height=max(400, brand_count * 30), # 브랜드 하나당 30픽셀씩 넉넉하게 공간 확보
+        yaxis_title=None,
+        xaxis_title="상점 수",
+        showlegend=True
+    )
+    
+    st.plotly_chart(fig_bar, use_container_width=True)
+
+# ==========================================
+# 8. 데이터 리스트 다운로드
 # ==========================================
 with st.expander("📄 상세 데이터 리스트 보기"):
     st.dataframe(filtered_df, use_container_width=True)
