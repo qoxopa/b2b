@@ -34,7 +34,7 @@ st.sidebar.header("🔍 상세 필터")
 
 # 1) 브랜드 선택 (버거킹(우딜), 해피크루 제외하고 전체 선택)
 all_brands = sorted(df['상점관리주체(브랜드)'].dropna().unique().tolist())
-exclude_list = ["버거킹(우딜)", "해피크루"]
+exclude_list = ["버거킹(우딜)", "해피크루","오투플러스"]
 default_brands = [b for b in all_brands if b not in exclude_list]
 selected_brands = st.sidebar.multiselect("브랜드 선택", all_brands, default=default_brands)
 
@@ -195,6 +195,35 @@ if not area_df.empty:
     )
 else:
     st.info("선택한 지역에 상점 데이터가 없습니다.")
+
+# ==========================================
+# 6-6. ✅ 주소요금제 전환 완료 리스트 (우수 사례 뷰어)
+# ==========================================
+st.markdown("---")
+st.subheader("✅ 주소요금제 전환 완료 리스트 (영업 레퍼런스용)")
+st.markdown("해당 지역에서 이미 주소요금제를 사용 중인 **'전환 완료 브랜드'** 목록입니다. (영업 시 타 브랜드 설득용으로 활용하세요!)")
+
+# 1. 주소요금제(고릴라지역요금제)를 쓰는 데이터만 쏙 뽑아내기!
+completed_df = filtered_df[filtered_df['매입타입'] == '고릴라지역요금제(주소)']
+
+if not completed_df.empty:
+    # 2. 시도, 시군구, 브랜드만 남기고 중복 제거 (상점 단위 -> 브랜드 단위)
+    success_list = completed_df[['시도', 'sigungu', '상점관리주체(브랜드)']].drop_duplicates()
+    
+    # 3. 보기 편하게 가나다순 정렬 (시도 -> 시군구 -> 브랜드 순)
+    success_list = success_list.sort_values(by=['시도', 'sigungu', '상점관리주체(브랜드)'])
+    
+    # 4. 네가 원했던 "서울 강남구 / 올리브영" 포맷으로 텍스트 합치기!
+    success_list['포맷팅 결과'] = success_list['시도'] + " " + success_list['sigungu'] + " / " + success_list['상점관리주체(브랜드)']
+    
+    # 5. 화면에 예쁘게 출력하기 위해 열 이름 정리
+    display_df = success_list[['포맷팅 결과']].reset_index(drop=True)
+    display_df.columns = ['📍 지역 및 전환 완료 브랜드']
+    
+    # 스트림릿 표로 출력 (화면을 너무 많이 차지하지 않게 높이를 살짝 제한해 줌!)
+    st.dataframe(display_df, use_container_width=True, hide_index=True, height=300)
+else:
+    st.info("현재 선택된 필터 내에는 주소요금제로 전환된 상점이 없습니다. 😭")
 
 # ==========================================
 # 7. 데이터 리스트 다운로드
