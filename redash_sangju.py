@@ -115,7 +115,7 @@ if not filtered_df.empty:
         x='상점수',              # X축에 개수
         color='매입타입', 
         orientation='h',        # ⭐️ 가로형 그래프로 변신하는 핵심 마법!
-        title="🎯 요금제 미전환 타겟 현황 (위에서부터 영업하세요!)",
+        title="🎯 브랜드별 전환 현황",
         color_discrete_map={"고릴라지역요금제(주소)": "#2ecc71", "배달대행사요금제(상점)": "#e74c3c"},
         text_auto=True
     )
