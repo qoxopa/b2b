@@ -197,31 +197,47 @@ else:
     st.info("선택한 지역에 상점 데이터가 없습니다.")
 
 # ==========================================
-# 6-6. ✅ 주소요금제 전환 완료 리스트 (우수 사례 뷰어)
+# 6-6. ✅ 주소요금제 전환 완료 리스트 (영업 레퍼런스용 - 상세 표)
 # ==========================================
 st.markdown("---")
 st.subheader("✅ 주소요금제 전환 완료 리스트 (영업 레퍼런스용)")
 st.markdown("해당 지역에서 이미 주소요금제를 사용 중인 **'전환 완료 브랜드'** 목록입니다. (영업 시 타 브랜드 설득용으로 활용하세요!)")
 
-# 1. 주소요금제(고릴라지역요금제)를 쓰는 데이터만 쏙 뽑아내기!
-completed_df = filtered_df[filtered_df['매입타입'] == '고릴라지역요금제(주소)']
+# 1. 주소요금제(고릴라지역요금제)를 쓰는 데이터만 쏙 뽑아내기! (.copy()를 써서 안전하게 복사)
+completed_df = filtered_df[filtered_df['매입타입'] == '고릴라지역요금제(주소)'].copy()
 
 if not completed_df.empty:
-    # 2. 시도, 시군구, 브랜드만 남기고 중복 제거 (상점 단위 -> 브랜드 단위)
-    success_list = completed_df[['시도', 'sigungu', '상점관리주체(브랜드)']].drop_duplicates()
+    # 2. 혹시 모를 에러를 방지하기 위해 주문 건수를 확실한 '숫자'로 바꿔주기
+    completed_df['최근 한 달 주문 건수'] = pd.to_numeric(completed_df['최근 한 달 주문 건수'], errors='coerce').fillna(0)
+
+    # 3. 지역(시도, 시군구)과 브랜드별로 묶어서 상점수와 총 주문수 계산하기! (판다스 마법 🧙‍♂️)
+    success_summary = completed_df.groupby(['시도', 'sigungu', '상점관리주체(브랜드)']).agg(
+        상점수=('고릴라 상점명', 'count'),       # 상점 이름 개수 세기
+        총주문수=('최근 한 달 주문 건수', 'sum')  # 주문 건수 전부 다 더하기
+    ).reset_index()
+
+    # 4. '시도'와 '시군구' 합쳐서 네가 원했던 '시도시군구' 컬럼 만들기
+    success_summary['시도시군구'] = success_summary['시도'] + " " + success_summary['sigungu']
+
+    # 5. 화면에 보여줄 4개 열만 쏙 골라내고 순서 맞추기
+    display_df = success_summary[['시도시군구', '상점관리주체(브랜드)', '상점수', '총주문수']]
     
-    # 3. 보기 편하게 가나다순 정렬 (시도 -> 시군구 -> 브랜드 순)
-    success_list = success_list.sort_values(by=['시도', 'sigungu', '상점관리주체(브랜드)'])
-    
-    # 4. 네가 원했던 "서울 강남구 / 올리브영" 포맷으로 텍스트 합치기!
-    success_list['포맷팅 결과'] = success_list['시도'] + " " + success_list['sigungu'] + " / " + success_list['상점관리주체(브랜드)']
-    
-    # 5. 화면에 예쁘게 출력하기 위해 열 이름 정리
-    display_df = success_list[['포맷팅 결과']].reset_index(drop=True)
-    display_df.columns = ['📍 지역 및 전환 완료 브랜드']
-    
-    # 스트림릿 표로 출력 (화면을 너무 많이 차지하지 않게 높이를 살짝 제한해 줌!)
-    st.dataframe(display_df, use_container_width=True, hide_index=True, height=300)
+    # 6. 정렬: 주문수가 많은 곳(액티브한 곳)부터 먼저 보이게 내림차순 정렬!
+    display_df = display_df.sort_values(by=['총주문수', '상점수'], ascending=[False, False])
+
+    # 7. 스트림릿 표로 예쁘게 출력하기 (숫자 포맷팅까지 완벽하게!)
+    st.dataframe(
+        display_df,
+        column_config={
+            "시도시군구": st.column_config.TextColumn("📍 지역 (시도+시군구)"),
+            "상점관리주체(브랜드)": st.column_config.TextColumn("🏢 브랜드명"),
+            "상점수": st.column_config.NumberColumn("✅ 설정된 상점 수", format="%d 개"),
+            "총주문수": st.column_config.NumberColumn("📦 최근 1개월 총 주문수", format="%d 건")
+        },
+        hide_index=True,
+        use_container_width=True,
+        height=400 # 스크롤바 예쁘게 생기도록 높이 고정
+    )
 else:
     st.info("현재 선택된 필터 내에는 주소요금제로 전환된 상점이 없습니다. 😭")
 
