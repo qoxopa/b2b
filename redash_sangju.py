@@ -144,6 +144,59 @@ else:
     st.warning("조건에 맞는 상점이 없습니다. 필터를 조절해 보세요!")
 
 # ==========================================
+# 6-5. 🏢 지역별 브랜드 요금제 전환 뷰어 (브랜드 단위 O, 상점 단위 X)
+# ==========================================
+st.markdown("---")
+st.subheader("🏢 선택 지역 내 '브랜드별' 요금제 전환 뷰어")
+st.markdown("왼쪽 필터에서 선택한 지역(시도/시군구) 안에서 **각 브랜드가 주소요금제로 얼마나 전환되었는지** 한눈에 파악합니다.")
+
+# area_df는 위에서 지역 필터만 적용해서 만들어둔 데이터프레임!
+area_df = df[df['시도'].isin(selected_sido) & df['sigungu'].isin(selected_sigungu)]
+
+if not area_df.empty:
+    # 1. 브랜드별, 매입타입별로 개수 세기 (상점 단위 -> 브랜드 단위로 압축!)
+    brand_summary = area_df.groupby(['상점관리주체(브랜드)', '매입타입']).size().unstack(fill_value=0).reset_index()
+    
+    # 만약 데이터에 특정 요금제가 아예 없으면 에러 안 나게 0으로 채워주기
+    if '고릴라지역요금제(주소)' not in brand_summary.columns:
+        brand_summary['고릴라지역요금제(주소)'] = 0
+    if '배달대행사요금제(상점)' not in brand_summary.columns:
+        brand_summary['배달대행사요금제(상점)'] = 0
+        
+    # 2. 총 상점 수랑 '주소요금제 전환율(%)' 계산하기
+    brand_summary['총 상점 수'] = brand_summary['고릴라지역요금제(주소)'] + brand_summary['배달대행사요금제(상점)']
+    # 상점이 0개인 곳은 0%, 아니면 비율 계산
+    brand_summary['주소요금제 전환율(%)'] = brand_summary.apply(
+        lambda row: (row['고릴라지역요금제(주소)'] / row['총 상점 수'] * 100) if row['총 상점 수'] > 0 else 0, 
+        axis=1
+    )
+    
+    # 3. 뷰어 정렬: 총 상점 수가 많으면서, 전환율이 낮은(영업이 시급한) 순서대로 정렬!
+    brand_summary = brand_summary.sort_values(by=['총 상점 수', '주소요금제 전환율(%)'], ascending=[False, True])
+    
+    # 4. 스트림릿 마법! 엑셀 표 안에 '프로그레스 바' 예쁘게 그리기
+    st.dataframe(
+        brand_summary,
+        column_config={
+            "상점관리주체(브랜드)": st.column_config.TextColumn("🏢 브랜드명"),
+            "총 상점 수": st.column_config.NumberColumn("총 상점 수", format="%d 개"),
+            "고릴라지역요금제(주소)": st.column_config.NumberColumn("✅ 주소요금제(완료)"),
+            "배달대행사요금제(상점)": st.column_config.NumberColumn("🚨 상점요금제(타겟)"),
+            "주소요금제 전환율(%)": st.column_config.ProgressColumn(
+                "📈 주소요금제 전환율",
+                help="100%에 가까울수록 주소요금제 전환이 완료된 브랜드입니다.",
+                format="%.1f %%",
+                min_value=0,
+                max_value=100,
+            ),
+        },
+        hide_index=True, # 쓸데없는 숫자 인덱스 숨기기
+        use_container_width=True # 화면 넓이에 꽉 차게!
+    )
+else:
+    st.info("선택한 지역에 상점 데이터가 없습니다.")
+
+# ==========================================
 # 7. 데이터 리스트 다운로드
 # ==========================================
 with st.expander("📄 상세 데이터 리스트 보기"):
