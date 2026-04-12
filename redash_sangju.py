@@ -6,7 +6,7 @@ import plotly.express as px
 # 1. 페이지 설정
 # ==========================================
 st.set_page_config(page_title="B2B 요금제 전략 대시보드", layout="wide")
-st.title("🗺️ 전국 B2B 상점 요금제 현황 & 영업 인사이트")
+st.title("🗺️ 전국 B2B 상점/주소기반 현황")
 
 # ==========================================
 # 2. 데이터 로드 (실시간 구글 시트)
@@ -72,7 +72,7 @@ if only_active:
 # ==========================================
 # 5. 💡 한눈에 빡!! 요금제 현황 요약 (인사이트 영역)
 # ==========================================
-st.markdown("### 📊 현재 지역/브랜드 요금제 보급 현황")
+st.markdown("### 📊 현재 상점/주소기반 전환 현황")
 
 if not filtered_df.empty:
     # 핵심 지표 계산
@@ -84,20 +84,20 @@ if not filtered_df.empty:
     # KPI 카드 4개를 위쪽에 한 줄로 나란히 배치!
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        st.metric("총 검색 상점 수", f"{total_count:,}개")
+        st.metric("총 조회 상점 수", f"{total_count:,}개")
     with c2:
-        st.metric("주소요금제 보급률", f"{address_rate:.1f}%")
+        st.metric("주소기반 전환률", f"{address_rate:.1f}%")
     with c3:
-        st.metric("주소요금제(완료)", f"{address_fee_count:,}개", delta_color="normal")
+        st.metric("주소기반(완료)", f"{address_fee_count:,}개", delta_color="normal")
     with c4:
-        st.metric("상점요금제(타겟)", f"{store_fee_count:,}개", delta="-미전환", delta_color="inverse")
+        st.metric("상점기반(타겟)", f"{store_fee_count:,}개", delta="미전환", delta_color="inverse")
     
     st.markdown("<br>", unsafe_allow_html=True) # 살짝 여백 주기
     
     # 막대그래프 (브랜드 이름 45도 기울이기 적용)
     insight_df = filtered_df.groupby(['상점관리주체(브랜드)', '매입타입']).size().reset_index(name='상점수')
     fig_bar = px.bar(insight_df, x='상점관리주체(브랜드)', y='상점수', color='매입타입', 
-                     title="🏢 브랜드별 요금제 혼용 현황 (미전환 타겟 확인)",
+                     title="🏢 브랜드별 상세 현황 (미전환 타겟 확인)",
                      color_discrete_map={"고릴라지역요금제(주소)": "#2ecc71", "배달대행사요금제(상점)": "#e74c3c"},
                      text_auto=True)
     fig_bar.update_layout(xaxis_tickangle=-45)
@@ -107,7 +107,7 @@ if not filtered_df.empty:
 # 6. 📍 상세 지도 (색상: 요금제 종류 구분)
 # ==========================================
 st.markdown("---")
-st.subheader(f"📍 상세 위치 확인 (색상: 요금제 구분 / 휠로 줌 가능)")
+st.subheader(f"📍 지도 기준 상점/주소기반 현황 확인")
 
 if not filtered_df.empty:
     fig_map = px.scatter_mapbox(
@@ -139,7 +139,7 @@ if not filtered_df.empty:
     
     st.plotly_chart(fig_map, use_container_width=True, config={'scrollZoom': True})
     
-    st.info("💡 팁: 초록색 점은 주소기반 요금제 적용 완료, 빨간색 점은 상점기반 요금제 사용 중인 곳입니다.")
+    st.info("💡 초록색 점은 주소기반 요금제 적용 완료, 빨간색 점은 상점기반 요금제 사용 중인 곳입니다.")
 else:
     st.warning("조건에 맞는 상점이 없습니다. 필터를 조절해 보세요!")
 
@@ -180,11 +180,11 @@ if not area_df.empty:
         column_config={
             "상점관리주체(브랜드)": st.column_config.TextColumn("🏢 브랜드명"),
             "총 상점 수": st.column_config.NumberColumn("총 상점 수", format="%d 개"),
-            "고릴라지역요금제(주소)": st.column_config.NumberColumn("✅ 주소요금제(완료)"),
-            "배달대행사요금제(상점)": st.column_config.NumberColumn("🚨 상점요금제(타겟)"),
+            "고릴라지역요금제(주소)": st.column_config.NumberColumn("✅ 주소기반(완료)"),
+            "배달대행사요금제(상점)": st.column_config.NumberColumn("🚨 상점기반(타겟)"),
             "주소요금제 전환율(%)": st.column_config.ProgressColumn(
                 "📈 주소요금제 전환율",
-                help="100%에 가까울수록 주소요금제 전환이 완료된 브랜드입니다.",
+                help="100%에 가까울수록 주소기반 전환이 완료된 브랜드입니다.",
                 format="%.1f %%",
                 min_value=0,
                 max_value=100,
@@ -200,8 +200,8 @@ else:
 # 6-6. ✅ 주소요금제 전환 완료 리스트 (영업 레퍼런스용 - 상세 표)
 # ==========================================
 st.markdown("---")
-st.subheader("✅ 주소요금제 전환 완료 리스트 (영업 레퍼런스용)")
-st.markdown("해당 지역에서 이미 주소요금제를 사용 중인 **'전환 완료 브랜드'** 목록입니다. (영업 시 타 브랜드 설득용으로 활용하세요!)")
+st.subheader("✅ 주소기반 전환 완료 리스트")
+st.markdown("해당 지역에서 이미 주소요금제를 사용 중인 **'전환 완료 브랜드'** 목록입니다.
 
 # 1. 주소요금제(고릴라지역요금제)를 쓰는 데이터만 쏙 뽑아내기! (.copy()를 써서 안전하게 복사)
 completed_df = filtered_df[filtered_df['매입타입'] == '고릴라지역요금제(주소)'].copy()
