@@ -162,11 +162,11 @@ st.title("🗺️ 전국 B2B 상점/주소기반 현황")
 # ==========================================
 REDASH_URL = "https://redash.barogo.io/api/queries/3381/results.json?api_key=BOcrPLBQyOhpmaQ1lUNb0fuK26MNHweiRA4JfQyD&max_age=86400"
 
-@st.cache_data(ttl=3600)
 def load_data():
     resp = requests.get(REDASH_URL, timeout=300)
     if not resp.ok:
-        raise Exception(f"Redash 응답 오류: HTTP {resp.status_code}")
+        st.error(f"Redash 응답 오류: HTTP {resp.status_code}")
+        st.stop()
     rows = resp.json()['query_result']['data']['rows']
     df = pd.DataFrame(rows)
     df = df.rename(columns={'위도(Latitude)': 'lon', '경도(Longitude)': 'lat'})
