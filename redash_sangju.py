@@ -165,7 +165,8 @@ REDASH_URL = "https://redash.barogo.io/api/queries/3381/results.json?api_key=BOc
 @st.cache_data(ttl=3600)
 def load_data():
     resp = requests.get(REDASH_URL, timeout=300)
-    resp.raise_for_status()
+    if not resp.ok:
+        raise Exception(f"Redash 응답 오류: HTTP {resp.status_code}")
     rows = resp.json()['query_result']['data']['rows']
     df = pd.DataFrame(rows)
     df = df.rename(columns={'위도(Latitude)': 'lon', '경도(Longitude)': 'lat'})
