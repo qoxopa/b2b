@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import requests
 
 # ==========================================
 # 담당자 매핑 (Redash RegionManager CTE 대체)
@@ -158,17 +157,13 @@ st.set_page_config(page_title="B2B 요금제 전략 대시보드", layout="wide"
 st.title("🗺️ 전국 B2B 상점/주소기반 현황")
 
 # ==========================================
-# 2. 데이터 로드 (Redash API 직접 호출)
+# 2. 데이터 로드 (Google Sheets CSV)
 # ==========================================
-REDASH_URL = "https://redash.barogo.io/api/queries/3381/results.json?api_key=BOcrPLBQyOhpmaQ1lUNb0fuK26MNHweiRA4JfQyD&max_age=86400"
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1G51UtaMeDoPEyo6gJQHZMUoxqjcYLVA70C4axZjOj84/export?format=csv&gid=0"
 
+@st.cache_data(ttl=3600)
 def load_data():
-    resp = requests.get(REDASH_URL, timeout=300)
-    if not resp.ok:
-        st.error(f"Redash 응답 오류: HTTP {resp.status_code}")
-        st.stop()
-    rows = resp.json()['query_result']['data']['rows']
-    df = pd.DataFrame(rows)
+    df = pd.read_csv(SHEET_URL)
     df = df.rename(columns={'위도(Latitude)': 'lon', '경도(Longitude)': 'lat'})
     df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
     df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
