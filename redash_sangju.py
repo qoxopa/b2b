@@ -228,10 +228,11 @@ if only_active:
     filtered_df = filtered_df[filtered_df['최근한달주문건수'] >= 1]
 
 # 상점 단위 집계 df (배대사 중복 제거 — 시도/시군구/차트 섹션 공용)
-_sk_global = '고릴라상점코드' if '고릴라상점코드' in filtered_df.columns else '상점명'
-_gcols = [c for c in ['상점관리주체(브랜드)', '시도', '시군구', '읍면동', _sk_global] if c in filtered_df.columns]
+# 상점명+시도+시군구 조합으로 고유 상점 식별 (고릴라상점코드는 NaN이 많아 부적합)
+_sk_global = '상점명'
+_gcols = [c for c in ['상점관리주체(브랜드)', '시도', '시군구', _sk_global] if c in filtered_df.columns]
 store_agg_df = (
-    filtered_df.dropna(subset=[_sk_global])
+    filtered_df
     .groupby(_gcols)
     .agg(
         매입타입=('매입타입', lambda x: '고릴라지역요금제(주소)' if (x == '고릴라지역요금제(주소)').all() else '배달대행사요금제(상점)'),
@@ -246,11 +247,10 @@ store_agg_df = (
 st.markdown("### 📊 현재 상점/주소기반 전환 현황")
 
 if not filtered_df.empty:
-    _sk = '고릴라상점코드' if '고릴라상점코드' in filtered_df.columns else '상점명'
-    _kpi_base = filtered_df.dropna(subset=[_sk])
     # 상점 단위 매입타입 판별: 모든 배대사가 주소기반이어야 완료
+    # 상점명+시도+시군구 조합으로 고유 상점 식별
     _store_type = (
-        _kpi_base.groupby(_sk)['매입타입']
+        filtered_df.groupby(['상점명', '시도', '시군구'])['매입타입']
         .apply(lambda x: '고릴라지역요금제(주소)' if (x == '고릴라지역요금제(주소)').all() else '배달대행사요금제(상점)')
     )
     total_count = len(_store_type)
@@ -275,11 +275,10 @@ st.subheader("🏢 선택 지역 내 '브랜드별' 요금제 전환 뷰어")
 area_df = filtered_df.copy()
 
 if not area_df.empty:
-    _sk2 = '고릴라상점코드' if '고릴라상점코드' in area_df.columns else '상점명'
-    # 브랜드+상점코드 단위로 매입타입 판별 후 집계
+    # 브랜드+상점명+시도+시군구 단위로 매입타입 판별 후 집계
     _store_brand = (
-        area_df.dropna(subset=[_sk2])
-        .groupby(['상점관리주체(브랜드)', _sk2])['매입타입']
+        area_df
+        .groupby(['상점관리주체(브랜드)', '상점명', '시도', '시군구'])['매입타입']
         .apply(lambda x: '고릴라지역요금제(주소)' if (x == '고릴라지역요금제(주소)').all() else '배달대행사요금제(상점)')
         .reset_index(name='매입타입')
     )
