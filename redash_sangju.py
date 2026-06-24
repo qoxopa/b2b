@@ -167,7 +167,7 @@ def load_data():
     df = df.rename(columns={'위도(Latitude)': 'lon', '경도(Longitude)': 'lat'})
     df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
     df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
-    df = df.dropna(subset=['lat', 'lon'])
+    # dropna는 지도 섹션에서만 적용 — 여기서 날리면 좌표 없는 상점이 집계에서 사라짐
 
     # 담당자 계산: 시도+시군구 → REGION_MANAGER 딕셔너리 조회
     region_key = (df['시도'].fillna('') + df['시군구'].fillna('')).str.replace(' ', '', regex=False)
@@ -227,9 +227,9 @@ filtered_df['최근한달주문건수'] = pd.to_numeric(filtered_df['최근한�
 if only_active:
     filtered_df = filtered_df[filtered_df['최근한달주문건수'] >= 1]
 
-# 상점 단위 집계 df (배대사 중복 제거 — 시도/시군구/차트 섹션 공용)
-# 상점명+시도+시군구 조합으로 고유 상점 식별 (고릴라상점코드는 NaN이 많아 부적합)
-_sk_global = '상점명'
+# 상점 단위 집계 df (배대사/허브 중복 제거 — 시도/시군구/차트 섹션 공용)
+# 고릴라상점코드 기준으로 고유 상점 식별 (NaN 없음 확인됨)
+_sk_global = '고릴라상점코드' if '고릴라상점코드' in filtered_df.columns else '상점명'
 _gcols = [c for c in ['상점관리주체(브랜드)', '시도', '시군구', _sk_global] if c in filtered_df.columns]
 store_agg_df = (
     filtered_df
@@ -247,10 +247,10 @@ store_agg_df = (
 st.markdown("### 📊 현재 상점/주소기반 전환 현황")
 
 if not filtered_df.empty:
-    # 상점 단위 매입타입 판별: 모든 배대사가 주소기반이어야 완료
-    # 상점명+시도+시군구 조합으로 고유 상점 식별
+    # 상점 단위 매입타입 판별: 고릴라상점코드 기준 (NaN 없음 확인됨)
+    _kpi_key = '고릴라상점코드' if '고릴라상점코드' in filtered_df.columns else '상점명'
     _store_type = (
-        filtered_df.groupby(['상점명', '시도', '시군구'])['매입타입']
+        filtered_df.groupby(_kpi_key)['매입타입']
         .apply(lambda x: '고릴라지역요금제(주소)' if (x == '고릴라지역요금제(주소)').all() else '배달대행사요금제(상점)')
     )
     total_count = len(_store_type)
@@ -275,10 +275,11 @@ st.subheader("🏢 선택 지역 내 '브랜드별' 요금제 전환 뷰어")
 area_df = filtered_df.copy()
 
 if not area_df.empty:
-    # 브랜드+상점명+시도+시군구 단위로 매입타입 판별 후 집계
+    # 브랜드+고릴라상점코드 단위로 매입타입 판별 후 집계
+    _brand_key = '고릴라상점코드' if '고릴라상점코드' in area_df.columns else '상점명'
     _store_brand = (
         area_df
-        .groupby(['상점관리주체(브랜드)', '상점명', '시도', '시군구'])['매입타입']
+        .groupby(['상점관리주체(브랜드)', _brand_key])['매입타입']
         .apply(lambda x: '고릴라지역요금제(주소)' if (x == '고릴라지역요금제(주소)').all() else '배달대행사요금제(상점)')
         .reset_index(name='매입타입')
     )
@@ -313,8 +314,9 @@ st.markdown("---")
 st.subheader("📍 지도 기준 상점/주소기반 현황 확인")
 
 if not filtered_df.empty:
+    map_df = filtered_df.dropna(subset=['lat', 'lon'])
     fig_map = px.scatter_mapbox(
-        filtered_df, lat="lat", lon="lon",
+        map_df, lat="lat", lon="lon",
         color="매입타입",
         color_discrete_map={"고릴라지역요금제(주소)": "#2ecc71", "배달대행사요금제(상점)": "#e74c3c"},
         hover_name="상점관리주체(브랜드)",
