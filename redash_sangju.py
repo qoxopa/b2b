@@ -227,8 +227,7 @@ filtered_df['최근한달주문건수'] = pd.to_numeric(filtered_df['최근한�
 if only_active:
     filtered_df = filtered_df[filtered_df['최근한달주문건수'] >= 1]
 
-# 상점 단위 집계 df (배대사/허브 중복 제거 — 시도/시군구/차트 섹션 공용)
-# 고릴라상점코드 기준으로 고유 상점 식별 (NaN 없음 확인됨)
+# 상점 단위 집계 df — 고릴라상점코드 기준 중복 제거, 이후 전 섹션 공용
 _sk_global = '고릴라상점코드' if '고릴라상점코드' in filtered_df.columns else '상점명'
 _gcols = [c for c in ['상점관리주체(브랜드)', '시도', '시군구', _sk_global] if c in filtered_df.columns]
 store_agg_df = (
@@ -240,21 +239,20 @@ store_agg_df = (
     )
     .reset_index()
 )
+# 벡터화 집계용 헬퍼 컬럼 (apply 대체)
+store_agg_df['_is_addr']  = (store_agg_df['매입타입'] == '고릴라지역요금제(주소)').astype(int)
+store_agg_df['_is_store'] = 1 - store_agg_df['_is_addr']
+store_agg_df['_ord_addr'] = store_agg_df['최근한달주문건수'] * store_agg_df['_is_addr']
+store_agg_df['_ord_store'] = store_agg_df['최근한달주문건수'] * store_agg_df['_is_store']
 
 # ==========================================
 # [순서 1] 💡 요금제 현황 요약 (KPI)
 # ==========================================
 st.markdown("### 📊 현재 상점/주소기반 전환 현황")
 
-if not filtered_df.empty:
-    # 상점 단위 매입타입 판별: 고릴라상점코드 기준 (NaN 없음 확인됨)
-    _kpi_key = '고릴라상점코드' if '고릴라상점코드' in filtered_df.columns else '상점명'
-    _store_type = (
-        filtered_df.groupby(_kpi_key)['매입타입']
-        .apply(lambda x: '고릴라지역요금제(주소)' if (x == '고릴라지역요금제(주소)').all() else '배달대행사요금제(상점)')
-    )
-    total_count = len(_store_type)
-    address_fee_count = int((_store_type == '고릴라지역요금제(주소)').sum())
+if not store_agg_df.empty:
+    total_count = len(store_agg_df)
+    address_fee_count = int(store_agg_df['_is_addr'].sum())
     store_fee_count = total_count - address_fee_count
     address_rate = (address_fee_count / total_count * 100) if total_count > 0 else 0
 
@@ -272,25 +270,14 @@ else:
 st.markdown("---")
 st.subheader("🏢 선택 지역 내 '브랜드별' 요금제 전환 뷰어")
 
-area_df = filtered_df.copy()
-
-if not area_df.empty:
-    # 브랜드+고릴라상점코드 단위로 매입타입 판별 후 집계
-    _brand_key = '고릴라상점코드' if '고릴라상점코드' in area_df.columns else '상점명'
-    _store_brand = (
-        area_df
-        .groupby(['상점관리주체(브랜드)', _brand_key])['매입타입']
-        .apply(lambda x: '고릴라지역요금제(주소)' if (x == '고릴라지역요금제(주소)').all() else '배달대행사요금제(상점)')
-        .reset_index(name='매입타입')
+if not store_agg_df.empty:
+    brand_summary = (
+        store_agg_df.groupby('상점관리주체(브랜드)')
+        .agg(**{'고릴라지역요금제(주소)': ('_is_addr', 'sum'), '배달대행사요금제(상점)': ('_is_store', 'sum')})
+        .reset_index()
     )
-    brand_summary = _store_brand.groupby(['상점관리주체(브랜드)', '매입타입']).size().unstack(fill_value=0).reset_index()
-    if '고릴라지역요금제(주소)' not in brand_summary.columns: brand_summary['고릴라지역요금제(주소)'] = 0
-    if '배달대행사요금제(상점)' not in brand_summary.columns: brand_summary['배달대행사요금제(상점)'] = 0
-
     brand_summary['총 상점 수'] = brand_summary['고릴라지역요금제(주소)'] + brand_summary['배달대행사요금제(상점)']
-    brand_summary['주소요금제 전환율(%)'] = brand_summary.apply(
-        lambda row: (row['고릴라지역요금제(주소)'] / row['총 상점 수'] * 100) if row['총 상점 수'] > 0 else 0, axis=1
-    )
+    brand_summary['주소요금제 전환율(%)'] = (brand_summary['고릴라지역요금제(주소)'] / brand_summary['총 상점 수'] * 100).fillna(0)
     brand_summary = brand_summary.sort_values(by=['총 상점 수', '주소요금제 전환율(%)'], ascending=[False, True])
 
     st.dataframe(
@@ -334,13 +321,15 @@ st.markdown("---")
 st.subheader("✅ 요금제 현황 리스트 (시도 단위)")
 st.info("👆 행을 클릭하면 아래에 상세 상점 리스트가 나타납니다.")
 
-if not filtered_df.empty:
-    sido_summary = store_agg_df.groupby(['시도', '상점관리주체(브랜드)']).apply(lambda x: pd.Series({
-        '상점수(상점기반)': (x['매입타입'] == '배달대행사요금제(상점)').sum(),
-        '최근 1개월 총 주문수(상점기반)': x[x['매입타입'] == '배달대행사요금제(상점)']['최근한달주문건수'].sum(),
-        '상점수(주소기반)': (x['매입타입'] == '고릴라지역요금제(주소)').sum(),
-        '최근 1개월 총 주문수(주소기반)': x[x['매입타입'] == '고릴라지역요금제(주소)']['최근한달주문건수'].sum(),
-    })).reset_index()
+if not store_agg_df.empty:
+    sido_summary = (
+        store_agg_df.groupby(['시도', '상점관리주체(브랜드)'])
+        .agg(상점수_store=('_is_store','sum'), 주문수_store=('_ord_store','sum'),
+             상점수_addr=('_is_addr','sum'),  주문수_addr=('_ord_addr','sum'))
+        .reset_index()
+        .rename(columns={'상점수_store':'상점수(상점기반)','주문수_store':'최근 1개월 총 주문수(상점기반)',
+                         '상점수_addr':'상점수(주소기반)','주문수_addr':'최근 1개월 총 주문수(주소기반)'})
+    )
 
     display_sido = sido_summary.sort_values(by=['최근 1개월 총 주문수(상점기반)', '상점수(상점기반)'], ascending=[False, False])
 
@@ -391,13 +380,15 @@ st.markdown("---")
 st.subheader("✅ 요금제 현황 리스트 (시군구 단위)")
 st.info("👆 행을 클릭하면 아래에 상세 상점 리스트가 나타납니다.")
 
-if not filtered_df.empty:
-    sigungu_summary = store_agg_df.groupby(['시도', '시군구', '상점관리주체(브랜드)']).apply(lambda x: pd.Series({
-        '상점수(상점기반)': (x['매입타입'] == '배달대행사요금제(상점)').sum(),
-        '최근 1개월 총 주문수(상점기반)': x[x['매입타입'] == '배달대행사요금제(상점)']['최근한달주문건수'].sum(),
-        '상점수(주소기반)': (x['매입타입'] == '고릴라지역요금제(주소)').sum(),
-        '최근 1개월 총 주문수(주소기반)': x[x['매입타입'] == '고릴라지역요금제(주소)']['최근한달주문건수'].sum(),
-    })).reset_index()
+if not store_agg_df.empty:
+    sigungu_summary = (
+        store_agg_df.groupby(['시도', '시군구', '상점관리주체(브랜드)'])
+        .agg(상점수_store=('_is_store','sum'), 주문수_store=('_ord_store','sum'),
+             상점수_addr=('_is_addr','sum'),  주문수_addr=('_ord_addr','sum'))
+        .reset_index()
+        .rename(columns={'상점수_store':'상점수(상점기반)','주문수_store':'최근 1개월 총 주문수(상점기반)',
+                         '상점수_addr':'상점수(주소기반)','주문수_addr':'최근 1개월 총 주문수(주소기반)'})
+    )
 
     sigungu_summary['시도시군구'] = sigungu_summary['시도'] + " " + sigungu_summary['시군구']
     display_sigungu = sigungu_summary.sort_values(by=['최근 1개월 총 주문수(상점기반)', '상점수(상점기반)'], ascending=[False, False])
