@@ -248,7 +248,7 @@ _sk_global = '고릴라상점코드' if '고릴라상점코드' in filtered_df.c
 _gcols = [c for c in ['상점관리주체(브랜드)', '시도', '시군구', _sk_global] if c in filtered_df.columns]
 store_agg_df = (
     filtered_df
-    .groupby(_gcols)
+    .groupby(_gcols, observed=True)
     .agg(
         매입타입=('매입타입', lambda x: '고릴라지역요금제(주소)' if (x == '고릴라지역요금제(주소)').all() else '배달대행사요금제(상점)'),
         최근한달주문건수=('최근한달주문건수', 'sum')
@@ -288,7 +288,7 @@ st.subheader("🏢 선택 지역 내 '브랜드별' 요금제 전환 뷰어")
 
 if not store_agg_df.empty:
     brand_summary = (
-        store_agg_df.groupby('상점관리주체(브랜드)')
+        store_agg_df.groupby('상점관리주체(브랜드)', observed=True)
         .agg(주소기반=('_is_addr', 'sum'), 상점기반=('_is_store', 'sum'))
         .reset_index()
         .rename(columns={'주소기반': '고릴라지역요금제(주소)', '상점기반': '배달대행사요금제(상점)'})
@@ -340,7 +340,7 @@ st.info("👆 행을 클릭하면 아래에 상세 상점 리스트가 나타납
 
 if not store_agg_df.empty:
     sido_summary = (
-        store_agg_df.groupby(['시도', '상점관리주체(브랜드)'])
+        store_agg_df.groupby(['시도', '상점관리주체(브랜드)'], observed=True)
         .agg(상점수_store=('_is_store','sum'), 주문수_store=('_ord_store','sum'),
              상점수_addr=('_is_addr','sum'),  주문수_addr=('_ord_addr','sum'))
         .reset_index()
@@ -399,7 +399,7 @@ st.info("👆 행을 클릭하면 아래에 상세 상점 리스트가 나타납
 
 if not store_agg_df.empty:
     sigungu_summary = (
-        store_agg_df.groupby(['시도', '시군구', '상점관리주체(브랜드)'])
+        store_agg_df.groupby(['시도', '시군구', '상점관리주체(브랜드)'], observed=True)
         .agg(상점수_store=('_is_store','sum'), 주문수_store=('_ord_store','sum'),
              상점수_addr=('_is_addr','sum'),  주문수_addr=('_ord_addr','sum'))
         .reset_index()
@@ -459,7 +459,7 @@ st.markdown("---")
 st.subheader("🎯 브랜드별 요금제 전환 전체 현황 (가로형 차트)")
 
 if not filtered_df.empty:
-    insight_df = store_agg_df.groupby(['상점관리주체(브랜드)', '매입타입']).size().reset_index(name='상점수')
+    insight_df = store_agg_df.groupby(['상점관리주체(브랜드)', '매입타입'], observed=True).size().reset_index(name='상점수')
     target_count = insight_df[insight_df['매입타입'] == '배달대행사요금제(상점)'].rename(columns={'상점수': '타겟수'})
     insight_df = pd.merge(insight_df, target_count[['상점관리주체(브랜드)', '타겟수']], on='상점관리주체(브랜드)', how='left').fillna(0)
     insight_df = insight_df.sort_values(by=['타겟수', '상점수'], ascending=[True, True])
