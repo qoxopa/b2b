@@ -165,11 +165,11 @@ SHEET_URL = "https://docs.google.com/spreadsheets/d/1G51UtaMeDoPEyo6gJQHZMUoxqjc
 def load_data():
     df = pd.read_csv(SHEET_URL)
 
-    # 사용하는 컬럼만 유지 (메모리 절약)
+    # 메모리 절약: 집계/표시에 필요한 컬럼만 유지
+    # 메인수행허브·공유수행허브는 허브명 수십 개가 들어간 긴 문자열 → 제외
     keep_cols = [
         '상점관리주체(브랜드)', '고릴라상점코드', '최신타임라인날짜', '상점명', '상태',
         '배송사', '시도', '시군구', '읍면동', '매입타입',
-        '메인수행허브', '공유수행허브', '수행허브사용상태',
         '매입대행료(기본)', '총판선차감', '허브선차감',
         '최근한달주문건수', '위도(Latitude)', '경도(Longitude)'
     ]
@@ -180,13 +180,8 @@ def load_data():
     df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
     # dropna는 지도 섹션에서만 적용 — 여기서 날리면 좌표 없는 상점이 집계에서 사라짐
 
-    # 반복 문자열 컬럼 → categorical (메모리 대폭 절약)
-    for col in ['상점관리주체(브랜드)', '배송사', '시도', '시군구', '읍면동', '매입타입', '상태']:
-        if col in df.columns:
-            df[col] = df[col].astype('category')
-
     # 담당자 계산: 시도+시군구 → REGION_MANAGER 딕셔너리 조회
-    region_key = (df['시도'].astype(str).fillna('') + df['시군구'].astype(str).fillna('')).str.replace(' ', '', regex=False)
+    region_key = (df['시도'].fillna('') + df['시군구'].fillna('')).str.replace(' ', '', regex=False)
     barogo_map  = {k: v[0] for k, v in REGION_MANAGER.items()}
     moa_map     = {k: v[1] for k, v in REGION_MANAGER.items()}
     dealver_map = {k: v[2] for k, v in REGION_MANAGER.items()}
