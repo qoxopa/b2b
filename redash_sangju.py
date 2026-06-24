@@ -164,13 +164,29 @@ SHEET_URL = "https://docs.google.com/spreadsheets/d/1G51UtaMeDoPEyo6gJQHZMUoxqjc
 @st.cache_data(ttl=3600)
 def load_data():
     df = pd.read_csv(SHEET_URL)
+
+    # 사용하는 컬럼만 유지 (메모리 절약)
+    keep_cols = [
+        '상점관리주체(브랜드)', '고릴라상점코드', '최신타임라인날짜', '상점명', '상태',
+        '배송사', '시도', '시군구', '읍면동', '매입타입',
+        '메인수행허브', '공유수행허브', '수행허브사용상태',
+        '매입대행료(기본)', '총판선차감', '허브선차감',
+        '최근한달주문건수', '위도(Latitude)', '경도(Longitude)'
+    ]
+    df = df[[c for c in keep_cols if c in df.columns]]
+
     df = df.rename(columns={'위도(Latitude)': 'lon', '경도(Longitude)': 'lat'})
     df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
     df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
     # dropna는 지도 섹션에서만 적용 — 여기서 날리면 좌표 없는 상점이 집계에서 사라짐
 
+    # 반복 문자열 컬럼 → categorical (메모리 대폭 절약)
+    for col in ['상점관리주체(브랜드)', '배송사', '시도', '시군구', '읍면동', '매입타입', '상태']:
+        if col in df.columns:
+            df[col] = df[col].astype('category')
+
     # 담당자 계산: 시도+시군구 → REGION_MANAGER 딕셔너리 조회
-    region_key = (df['시도'].fillna('') + df['시군구'].fillna('')).str.replace(' ', '', regex=False)
+    region_key = (df['시도'].astype(str).fillna('') + df['시군구'].astype(str).fillna('')).str.replace(' ', '', regex=False)
     barogo_map  = {k: v[0] for k, v in REGION_MANAGER.items()}
     moa_map     = {k: v[1] for k, v in REGION_MANAGER.items()}
     dealver_map = {k: v[2] for k, v in REGION_MANAGER.items()}
@@ -273,8 +289,9 @@ st.subheader("🏢 선택 지역 내 '브랜드별' 요금제 전환 뷰어")
 if not store_agg_df.empty:
     brand_summary = (
         store_agg_df.groupby('상점관리주체(브랜드)')
-        .agg(**{'고릴라지역요금제(주소)': ('_is_addr', 'sum'), '배달대행사요금제(상점)': ('_is_store', 'sum')})
+        .agg(주소기반=('_is_addr', 'sum'), 상점기반=('_is_store', 'sum'))
         .reset_index()
+        .rename(columns={'주소기반': '고릴라지역요금제(주소)', '상점기반': '배달대행사요금제(상점)'})
     )
     brand_summary['총 상점 수'] = brand_summary['고릴라지역요금제(주소)'] + brand_summary['배달대행사요금제(상점)']
     brand_summary['주소요금제 전환율(%)'] = (brand_summary['고릴라지역요금제(주소)'] / brand_summary['총 상점 수'] * 100).fillna(0)
