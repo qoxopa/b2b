@@ -267,7 +267,14 @@ selected_sigungu = st.sidebar.multiselect("시군구 선택", sigungu_list, defa
 
 sigungu_filtered_df = sido_filtered_df[sido_filtered_df['시군구'].isin(selected_sigungu)]
 eupmyeondong_list = sorted(sigungu_filtered_df['읍면동'].dropna().unique().tolist())
-selected_eupmyeondong = st.sidebar.multiselect("읍면동 선택", eupmyeondong_list, default=eupmyeondong_list)
+
+# 시군구 선택이 바뀌면 읍면동 위젯 초기화 (이전 선택값 유지 버그 방지)
+_sig_key = tuple(sorted(selected_sigungu))
+if st.session_state.get("_prev_sigungu") != _sig_key:
+    st.session_state["_prev_sigungu"] = _sig_key
+    st.session_state.pop("emd_filter", None)
+
+selected_eupmyeondong = st.sidebar.multiselect("읍면동 선택", eupmyeondong_list, default=eupmyeondong_list, key="emd_filter")
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("📈 상점 활동성 필터")
