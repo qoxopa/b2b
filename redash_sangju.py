@@ -439,31 +439,62 @@ if not filtered_df.empty:
         if sigungu_gj:
             folium.GeoJson(
                 sigungu_gj, name="시군구 경계",
-                style_function=lambda f: {"color": "#444", "weight": 2, "fillOpacity": 0.01},
+                style_function=lambda f: {"color": "#888", "weight": 1.5, "fillOpacity": 0, "opacity": 0.5},
                 tooltip=folium.GeoJsonTooltip(fields=["SIG_KOR_NM"], aliases=["시군구"])
             ).add_to(m)
 
     if show_beopjeong_layer:
         beopjeong_gj = load_beopjeongdong()
         if beopjeong_gj:
-            # 시군구 코드(앞 5자리) → 시군구명 매핑 후 각 feature에 sigungu_nm 추가
+            # 시군구 코드(앞 5자리) → 시군구명 매핑
             sig_gj_for_lookup = load_sigungu_geojson()
+            sig_lookup = {}
             if sig_gj_for_lookup:
                 sig_lookup = {
                     str(f["properties"].get("SIG_CD", "")): f["properties"].get("SIG_KOR_NM", "")
                     for f in sig_gj_for_lookup["features"]
                 }
-                for f in beopjeong_gj["features"]:
-                    code = str(f["properties"].get("code", ""))
-                    f["properties"]["sigungu_nm"] = sig_lookup.get(code[:5], "")
+            for f in beopjeong_gj["features"]:
+                code = str(f["properties"].get("code", ""))
+                f["properties"]["sigungu_nm"] = sig_lookup.get(code[:5], "")
+
+            # 선택된 시군구에 해당하는 법정동만 필터링
+            sigungu_set = set(selected_sigungu)
+            filtered_bj = {
+                "type": "FeatureCollection",
+                "features": [
+                    f for f in beopjeong_gj["features"]
+                    if f["properties"]["sigungu_nm"] in sigungu_set
+                ]
+            } if sigungu_set else beopjeong_gj
+
             folium.GeoJson(
-                beopjeong_gj, name="법정동 경계",
+                filtered_bj, name="법정동 경계",
                 style_function=lambda f: {"color": "#3a86ff", "weight": 0.8, "fillOpacity": 0.02},
                 tooltip=folium.GeoJsonTooltip(
                     fields=["sigungu_nm", "name"],
                     aliases=["시군구", "법정동명"]
                 )
             ).add_to(m)
+
+            # 법정동명 중심점 레이블 (필터된 법정동만)
+            from shapely.geometry import shape as shp_shape
+            label_fg = folium.FeatureGroup(name="법정동명 레이블", show=True)
+            for f in filtered_bj["features"]:
+                try:
+                    centroid = shp_shape(f["geometry"]).centroid
+                    nm = f["properties"].get("name", "")
+                    folium.Marker(
+                        [centroid.y, centroid.x],
+                        icon=folium.DivIcon(
+                            html=f'<div style="font-size:9px;color:#1a5fb4;font-weight:600;white-space:nowrap;text-shadow:0 0 3px #fff,0 0 3px #fff">{nm}</div>',
+                            icon_size=(80, 16),
+                            icon_anchor=(40, 8)
+                        )
+                    ).add_to(label_fg)
+                except Exception:
+                    pass
+            label_fg.add_to(m)
 
     if show_hangjeong:
         hangjeong_gj = load_hangjeongdong()
@@ -511,10 +542,11 @@ if not filtered_df.empty:
             {radius:5, color:'#e74c3c', fillColor:'#e74c3c', fillOpacity:0.85, weight:1.5});
     }"""
 
+    _cluster_opts = {"showCoverageOnHover": False}
     if addr_data:
-        FastMarkerCluster(addr_data, callback=GREEN_CB, name="✅ 주소기반 상점").add_to(m)
+        FastMarkerCluster(addr_data, callback=GREEN_CB, name="✅ 주소기반 상점", options=_cluster_opts).add_to(m)
     if store_data:
-        FastMarkerCluster(store_data, callback=RED_CB, name="🚨 상점기반 상점").add_to(m)
+        FastMarkerCluster(store_data, callback=RED_CB, name="🚨 상점기반 상점", options=_cluster_opts).add_to(m)
 
     # --- Draw 컨트롤 ---
     Draw(
