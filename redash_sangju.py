@@ -434,10 +434,23 @@ if not filtered_df.empty:
     if show_beopjeong_layer:
         beopjeong_gj = load_beopjeongdong()
         if beopjeong_gj:
+            # 시군구 코드(앞 5자리) → 시군구명 매핑 후 각 feature에 sigungu_nm 추가
+            sig_gj_for_lookup = load_sigungu_geojson()
+            if sig_gj_for_lookup:
+                sig_lookup = {
+                    str(f["properties"].get("SIG_CD", "")): f["properties"].get("SIG_KOR_NM", "")
+                    for f in sig_gj_for_lookup["features"]
+                }
+                for f in beopjeong_gj["features"]:
+                    code = str(f["properties"].get("code", ""))
+                    f["properties"]["sigungu_nm"] = sig_lookup.get(code[:5], "")
             folium.GeoJson(
                 beopjeong_gj, name="법정동 경계",
                 style_function=lambda f: {"color": "#3a86ff", "weight": 0.8, "fillOpacity": 0.02},
-                tooltip=folium.GeoJsonTooltip(fields=["name"], aliases=["법정동명"])
+                tooltip=folium.GeoJsonTooltip(
+                    fields=["sigungu_nm", "name"],
+                    aliases=["시군구", "법정동명"]
+                )
             ).add_to(m)
 
     if show_hangjeong:
@@ -457,7 +470,10 @@ if not filtered_df.empty:
                 folium.GeoJson(
                     filtered_hj, name="행정동 경계",
                     style_function=lambda f: {"color": "#fb8500", "weight": 0.8, "fillOpacity": 0.02},
-                    tooltip=folium.GeoJsonTooltip(fields=["adm_nm"], aliases=["행정동명"])
+                    tooltip=folium.GeoJsonTooltip(
+                        fields=["sggnm", "adm_nm"],
+                        aliases=["시군구", "행정동명"]
+                    )
                 ).add_to(m)
 
     # --- 상점 마커: FastMarkerCluster (JS 콜백 방식, 개별 Python 객체 생성 없음) ---
