@@ -359,7 +359,11 @@ if not store_agg_df.empty:
 st.markdown("---")
 st.subheader("📍 지도 기준 상점/주소기반 현황 확인")
 
-show_hangjeong = st.sidebar.checkbox("행정동 경계 오버레이 (첫 로드 느릴 수 있음)", value=False)
+st.sidebar.markdown("---")
+st.sidebar.subheader("🗺️ 지도 경계 레이어")
+show_sigungu_layer  = st.sidebar.checkbox("시군구 경계", value=False)
+show_beopjeong_layer = st.sidebar.checkbox("법정동 경계", value=False)
+show_hangjeong      = st.sidebar.checkbox("행정동 경계 (첫 로드 느릴 수 있음)", value=False)
 
 if not filtered_df.empty:
     map_df = filtered_df.dropna(subset=['lat', 'lon'])
@@ -376,26 +380,27 @@ if not filtered_df.empty:
 
     m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom, tiles="CartoDB positron")
 
-    # --- 레이어 1: 시군구 경계 (굵은 선) ---
-    sigungu_gj = load_sigungu_geojson()
-    if sigungu_gj:
-        folium.GeoJson(
-            sigungu_gj, name="시군구 경계",
-            style_function=lambda f: {"color": "#444", "weight": 2, "fillOpacity": 0.01},
-            tooltip=folium.GeoJsonTooltip(fields=["SIG_KOR_NM"], aliases=["시군구"])
-        ).add_to(m)
+    from folium.plugins import FastMarkerCluster
 
-    # --- 레이어 2: 법정동 경계 (기본 ON, 파란 얇은 선) ---
-    beopjeong_gj = load_beopjeongdong()
-    if beopjeong_gj:
-        folium.GeoJson(
-            beopjeong_gj, name="법정동 경계",
-            show=True,
-            style_function=lambda f: {"color": "#3a86ff", "weight": 0.8, "fillOpacity": 0.02},
-            tooltip=folium.GeoJsonTooltip(fields=["name"], aliases=["법정동명"])
-        ).add_to(m)
+    # --- 경계 레이어: 체크박스 ON일 때만 지도에 추가 (미체크 시 데이터 전송 없음) ---
+    if show_sigungu_layer:
+        sigungu_gj = load_sigungu_geojson()
+        if sigungu_gj:
+            folium.GeoJson(
+                sigungu_gj, name="시군구 경계",
+                style_function=lambda f: {"color": "#444", "weight": 2, "fillOpacity": 0.01},
+                tooltip=folium.GeoJsonTooltip(fields=["SIG_KOR_NM"], aliases=["시군구"])
+            ).add_to(m)
 
-    # --- 레이어 3: 행정동 경계 (사이드바 체크박스 ON 시 로드, 기본 OFF) ---
+    if show_beopjeong_layer:
+        beopjeong_gj = load_beopjeongdong()
+        if beopjeong_gj:
+            folium.GeoJson(
+                beopjeong_gj, name="법정동 경계",
+                style_function=lambda f: {"color": "#3a86ff", "weight": 0.8, "fillOpacity": 0.02},
+                tooltip=folium.GeoJsonTooltip(fields=["name"], aliases=["법정동명"])
+            ).add_to(m)
+
     if show_hangjeong:
         hangjeong_gj = load_hangjeongdong()
         if hangjeong_gj:
@@ -412,32 +417,37 @@ if not filtered_df.empty:
             if filtered_hj["features"]:
                 folium.GeoJson(
                     filtered_hj, name="행정동 경계",
-                    show=True,
                     style_function=lambda f: {"color": "#fb8500", "weight": 0.8, "fillOpacity": 0.02},
                     tooltip=folium.GeoJsonTooltip(fields=["adm_nm"], aliases=["행정동명"])
                 ).add_to(m)
 
-    # --- 레이어 4: 상점 마커 ---
-    addr_group  = folium.FeatureGroup(name="✅ 주소기반 상점", show=True)
-    store_group = folium.FeatureGroup(name="🚨 상점기반 상점", show=True)
+    # --- 상점 마커: FastMarkerCluster (JS 콜백 방식, 개별 Python 객체 생성 없음) ---
+    # 상점 수 경고
+    n_markers = len(map_df)
+    if n_markers > 3000:
+        st.warning(f"⚠️ 현재 {n_markers:,}개 상점이 표시됩니다. 사이드바에서 시도·시군구를 좁히면 속도가 빨라집니다.")
 
-    for _, row in map_df.iterrows():
-        is_addr = row["매입타입"] == "고릴라지역요금제(주소)"
-        color = "#2ecc71" if is_addr else "#e74c3c"
-        tip = f'{row.get("상점명","?")} ({row.get("시군구","")}) | {row["매입타입"]}'
-        mk = folium.CircleMarker(
-            location=[row["lat"], row["lon"]],
-            radius=5, color=color, weight=1.5,
-            fill=True, fill_color=color, fill_opacity=0.85,
-            tooltip=tip
-        )
-        if is_addr:
-            mk.add_to(addr_group)
-        else:
-            mk.add_to(store_group)
+    addr_df  = map_df[map_df["매입타입"] == "고릴라지역요금제(주소)"]
+    store_df = map_df[map_df["매입타입"] != "고릴라지역요금제(주소)"]
 
-    addr_group.add_to(m)
-    store_group.add_to(m)
+    addr_data  = addr_df[["lat", "lon"]].values.tolist()
+    store_data = store_df[["lat", "lon"]].values.tolist()
+
+    GREEN_CB = """
+    function(row) {
+        return L.circleMarker(new L.LatLng(row[0], row[1]),
+            {radius:5, color:'#2ecc71', fillColor:'#2ecc71', fillOpacity:0.85, weight:1.5});
+    }"""
+    RED_CB = """
+    function(row) {
+        return L.circleMarker(new L.LatLng(row[0], row[1]),
+            {radius:5, color:'#e74c3c', fillColor:'#e74c3c', fillOpacity:0.85, weight:1.5});
+    }"""
+
+    if addr_data:
+        FastMarkerCluster(addr_data, callback=GREEN_CB, name="✅ 주소기반 상점").add_to(m)
+    if store_data:
+        FastMarkerCluster(store_data, callback=RED_CB, name="🚨 상점기반 상점").add_to(m)
 
     # --- Draw 컨트롤 ---
     Draw(
@@ -452,7 +462,7 @@ if not filtered_df.empty:
     folium.LayerControl(collapsed=False).add_to(m)
 
     map_output = st_folium(m, use_container_width=True, height=700, returned_objects=["last_active_drawing"])
-    st.info("💡 초록: 주소기반 완료 / 빨강: 상점기반(전환 필요) | 우측 ▭/⬡ 도구로 영역 그리기 → 해당 상점 목록 표시")
+    st.info("💡 초록: 주소기반 완료 / 빨강: 상점기반(전환 필요) | 우측 ▭/⬡ 도구로 영역 그리기 → 해당 상점 목록 표시\n경계선은 사이드바 체크박스에서 켜세요")
 
     # --- 폴리곤 선택 결과 ---
     drawn = (map_output or {}).get("last_active_drawing")
