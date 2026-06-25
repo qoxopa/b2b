@@ -1,6 +1,11 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import json
+import requests
+import folium
+from folium.plugins import Draw
+from streamlit_folium import st_folium
 
 # ==========================================
 # 담당자 매핑 (Redash RegionManager CTE 대체)
@@ -199,6 +204,48 @@ def load_data():
 df = load_data()
 
 # ==========================================
+# 행정경계 GeoJSON 로드 함수
+# ==========================================
+@st.cache_data(ttl=86400)
+def load_sigungu_geojson():
+    try:
+        with open("assets/sigungu.geojson", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+@st.cache_data(ttl=86400)
+def load_beopjeongdong():
+    url = (
+        "https://raw.githubusercontent.com/southkorea/southkorea-maps"
+        "/master/kostat/2013/json/skorea_submunicipalities_geo_simple.json"
+    )
+    try:
+        return requests.get(url, timeout=30).json()
+    except Exception:
+        return None
+
+@st.cache_data(ttl=86400)
+def load_hangjeongdong():
+    url = (
+        "https://raw.githubusercontent.com/vuski/admdongkor"
+        "/master/ver20240101/HangJeongDong_ver20240101.geojson"
+    )
+    try:
+        return requests.get(url, timeout=90).json()
+    except Exception:
+        return None
+
+SIDO_NAME_MAP = {
+    '서울': '서울특별시', '부산': '부산광역시', '대구': '대구광역시',
+    '인천': '인천광역시', '광주': '광주광역시', '대전': '대전광역시',
+    '울산': '울산광역시', '세종': '세종특별자치시', '경기': '경기도',
+    '강원': '강원특별자치도', '충북': '충청북도', '충남': '충청남도',
+    '전북': '전북특별자치도', '전남': '전라남도', '경북': '경상북도',
+    '경남': '경상남도', '제주': '제주특별자치도',
+}
+
+# ==========================================
 # 3. 사이드바 - 스마트 필터 설정
 # ==========================================
 st.sidebar.header("🔍 상세 필터")
@@ -307,24 +354,142 @@ if not store_agg_df.empty:
     )
 
 # ==========================================
-# [순서 3] 📍 상세 지도
+# [순서 3] 📍 상세 지도 (Folium — 폴리곤 선택 + 경계 오버레이)
 # ==========================================
 st.markdown("---")
 st.subheader("📍 지도 기준 상점/주소기반 현황 확인")
 
+show_hangjeong = st.sidebar.checkbox("행정동 경계 오버레이 (첫 로드 느릴 수 있음)", value=False)
+
 if not filtered_df.empty:
     map_df = filtered_df.dropna(subset=['lat', 'lon'])
-    fig_map = px.scatter_mapbox(
-        map_df, lat="lat", lon="lon",
-        color="매입타입",
-        color_discrete_map={"고릴라지역요금제(주소)": "#2ecc71", "배달대행사요금제(상점)": "#e74c3c"},
-        hover_name="상점관리주체(브랜드)",
-        hover_data={"시도": True, "시군구": True, "상점관리주체(브랜드)": False, "상점명": True, "lat": False, "lon": False, "매입타입": False},
-        zoom=6, height=700
-    )
-    fig_map.update_layout(mapbox_style="carto-positron", margin={"r": 0, "t": 0, "l": 0, "b": 0}, clickmode='event+select', dragmode='pan')
-    st.plotly_chart(fig_map, use_container_width=True, config={'scrollZoom': True})
-    st.info("💡 초록색 점은 주소기반 적용 완료, 빨간색 점은 상점기반 사용 중인 곳입니다.")
+
+    # 지도 중심·줌 계산
+    if not map_df.empty:
+        center_lat = map_df['lat'].mean()
+        center_lon = map_df['lon'].mean()
+        n_sigungu = len(selected_sigungu)
+        n_sido    = len(selected_sido)
+        zoom = 13 if n_sigungu == 1 else (11 if n_sigungu <= 3 else (9 if n_sido == 1 else 7))
+    else:
+        center_lat, center_lon, zoom = 36.5, 127.5, 7
+
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom, tiles="CartoDB positron")
+
+    # --- 레이어 1: 시군구 경계 (굵은 선) ---
+    sigungu_gj = load_sigungu_geojson()
+    if sigungu_gj:
+        folium.GeoJson(
+            sigungu_gj, name="시군구 경계",
+            style_function=lambda f: {"color": "#444", "weight": 2, "fillOpacity": 0.01},
+            tooltip=folium.GeoJsonTooltip(fields=["SIG_KOR_NM"], aliases=["시군구"])
+        ).add_to(m)
+
+    # --- 레이어 2: 법정동 경계 (기본 ON, 파란 얇은 선) ---
+    beopjeong_gj = load_beopjeongdong()
+    if beopjeong_gj:
+        folium.GeoJson(
+            beopjeong_gj, name="법정동 경계",
+            show=True,
+            style_function=lambda f: {"color": "#3a86ff", "weight": 0.8, "fillOpacity": 0.02},
+            tooltip=folium.GeoJsonTooltip(fields=["name"], aliases=["법정동명"])
+        ).add_to(m)
+
+    # --- 레이어 3: 행정동 경계 (사이드바 체크박스 ON 시 로드, 기본 OFF) ---
+    if show_hangjeong:
+        hangjeong_gj = load_hangjeongdong()
+        if hangjeong_gj:
+            sido_full = {SIDO_NAME_MAP.get(s, s) for s in selected_sido}
+            sigungu_set = set(selected_sigungu)
+            filtered_hj = {
+                "type": "FeatureCollection",
+                "features": [
+                    f for f in hangjeong_gj["features"]
+                    if f["properties"].get("sidonm") in sido_full
+                    and f["properties"].get("sggnm") in sigungu_set
+                ]
+            }
+            if filtered_hj["features"]:
+                folium.GeoJson(
+                    filtered_hj, name="행정동 경계",
+                    show=True,
+                    style_function=lambda f: {"color": "#fb8500", "weight": 0.8, "fillOpacity": 0.02},
+                    tooltip=folium.GeoJsonTooltip(fields=["adm_nm"], aliases=["행정동명"])
+                ).add_to(m)
+
+    # --- 레이어 4: 상점 마커 ---
+    addr_group  = folium.FeatureGroup(name="✅ 주소기반 상점", show=True)
+    store_group = folium.FeatureGroup(name="🚨 상점기반 상점", show=True)
+
+    for _, row in map_df.iterrows():
+        is_addr = row["매입타입"] == "고릴라지역요금제(주소)"
+        color = "#2ecc71" if is_addr else "#e74c3c"
+        tip = f'{row.get("상점명","?")} ({row.get("시군구","")}) | {row["매입타입"]}'
+        mk = folium.CircleMarker(
+            location=[row["lat"], row["lon"]],
+            radius=5, color=color, weight=1.5,
+            fill=True, fill_color=color, fill_opacity=0.85,
+            tooltip=tip
+        )
+        if is_addr:
+            mk.add_to(addr_group)
+        else:
+            mk.add_to(store_group)
+
+    addr_group.add_to(m)
+    store_group.add_to(m)
+
+    # --- Draw 컨트롤 ---
+    Draw(
+        export=False,
+        draw_options={
+            "polyline": False, "circlemarker": False, "marker": False,
+            "circle": False, "rectangle": True, "polygon": True
+        },
+        edit_options={"edit": True, "remove": True}
+    ).add_to(m)
+
+    folium.LayerControl(collapsed=False).add_to(m)
+
+    map_output = st_folium(m, use_container_width=True, height=700, returned_objects=["last_active_drawing"])
+    st.info("💡 초록: 주소기반 완료 / 빨강: 상점기반(전환 필요) | 우측 ▭/⬡ 도구로 영역 그리기 → 해당 상점 목록 표시")
+
+    # --- 폴리곤 선택 결과 ---
+    drawn = (map_output or {}).get("last_active_drawing")
+    if drawn and drawn.get("geometry"):
+        from shapely.geometry import shape, Point
+        try:
+            poly = shape(drawn["geometry"])
+            mask = map_df.apply(lambda r: poly.contains(Point(r["lon"], r["lat"])), axis=1)
+            selected_in_poly = map_df[mask]
+            st.success(f"🎯 선택 영역 내 상점 **{len(selected_in_poly)}개** (사이드바 필터 적용됨)")
+            if not selected_in_poly.empty:
+                poly_cols = [c for c in [
+                    '상점관리주체(브랜드)', '상점명', '시도', '시군구', '읍면동',
+                    '매입타입', '배송사', '담당자', '최근한달주문건수'
+                ] if c in selected_in_poly.columns]
+                st.dataframe(
+                    selected_in_poly[poly_cols],
+                    column_config={
+                        "상점관리주체(브랜드)": st.column_config.TextColumn("브랜드"),
+                        "상점명": st.column_config.TextColumn("상점명"),
+                        "시도": st.column_config.TextColumn("시도"),
+                        "시군구": st.column_config.TextColumn("시군구"),
+                        "읍면동": st.column_config.TextColumn("읍면동"),
+                        "매입타입": st.column_config.TextColumn("매입타입"),
+                        "배송사": st.column_config.TextColumn("배송사"),
+                        "담당자": st.column_config.TextColumn("담당자"),
+                        "최근한달주문건수": st.column_config.NumberColumn("최근1달 주문수", format="%d 건"),
+                    },
+                    hide_index=True, use_container_width=True
+                )
+        except Exception as e:
+            st.warning(f"영역 선택 처리 오류: {e}")
+    else:
+        st.caption("🗺️ 지도 우측 툴바의 ▭(사각형) 또는 ⬡(폴리곤) 버튼으로 영역을 그리면 해당 구역 상점 목록이 표시됩니다.")
+
+else:
+    st.warning("조건에 맞는 상점이 없습니다.")
 
 # ==========================================
 # [순서 4] ✅ 요금제 현황 리스트 (시도 단위)
