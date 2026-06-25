@@ -265,6 +265,10 @@ sido_filtered_df = df[df['시도'].isin(selected_sido)]
 sigungu_list = sorted(sido_filtered_df['시군구'].dropna().unique().tolist())
 selected_sigungu = st.sidebar.multiselect("시군구 선택", sigungu_list, default=sigungu_list)
 
+sigungu_filtered_df = sido_filtered_df[sido_filtered_df['시군구'].isin(selected_sigungu)]
+eupmyeondong_list = sorted(sigungu_filtered_df['읍면동'].dropna().unique().tolist())
+selected_eupmyeondong = st.sidebar.multiselect("읍면동 선택", eupmyeondong_list, default=eupmyeondong_list)
+
 st.sidebar.markdown("---")
 st.sidebar.subheader("📈 상점 활동성 필터")
 only_active = st.sidebar.checkbox("최근 한 달 주문 발생 상점 보기", value=False)
@@ -276,7 +280,8 @@ filtered_df = df[
     df['상점관리주체(브랜드)'].isin(selected_brands) &
     df['매입타입'].isin(selected_fees) &
     df['시도'].isin(selected_sido) &
-    df['시군구'].isin(selected_sigungu)
+    df['시군구'].isin(selected_sigungu) &
+    df['읍면동'].isin(selected_eupmyeondong)
 ].copy()
 
 # 주문 건수 숫자 변환 및 결측치 처리
