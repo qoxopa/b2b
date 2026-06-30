@@ -453,48 +453,53 @@ if not filtered_df.empty:
                 sig_lookup = {
                     str(f["properties"].get("SIG_CD", "")): f["properties"].get("SIG_KOR_NM", "")
                     for f in sig_gj_for_lookup["features"]
+                    if f["properties"].get("SIG_CD") and f["properties"].get("SIG_KOR_NM")
                 }
+
+            # 캐시 객체 직접 변경 금지 → 새 dict 생성으로 enrichment + filtering 한 번에
+            sigungu_set = set(selected_sigungu)
+            filtered_features = []
             for f in beopjeong_gj["features"]:
                 code = str(f["properties"].get("code", ""))
-                f["properties"]["sigungu_nm"] = sig_lookup.get(code[:5], "")
+                sig_nm = sig_lookup.get(code[:5], "")
+                if not sigungu_set or sig_nm in sigungu_set:
+                    new_props = dict(f["properties"])
+                    new_props["sigungu_nm"] = sig_nm
+                    filtered_features.append({
+                        "type": "Feature",
+                        "properties": new_props,
+                        "geometry": f["geometry"]
+                    })
 
-            # 선택된 시군구에 해당하는 법정동만 필터링
-            sigungu_set = set(selected_sigungu)
-            filtered_bj = {
-                "type": "FeatureCollection",
-                "features": [
-                    f for f in beopjeong_gj["features"]
-                    if f["properties"]["sigungu_nm"] in sigungu_set
-                ]
-            } if sigungu_set else beopjeong_gj
+            if filtered_features:
+                filtered_bj = {"type": "FeatureCollection", "features": filtered_features}
+                folium.GeoJson(
+                    filtered_bj, name="법정동 경계",
+                    style_function=lambda f: {"color": "#3a86ff", "weight": 0.8, "fillOpacity": 0.02},
+                    tooltip=folium.GeoJsonTooltip(
+                        fields=["sigungu_nm", "name"],
+                        aliases=["시군구", "법정동명"]
+                    )
+                ).add_to(m)
 
-            folium.GeoJson(
-                filtered_bj, name="법정동 경계",
-                style_function=lambda f: {"color": "#3a86ff", "weight": 0.8, "fillOpacity": 0.02},
-                tooltip=folium.GeoJsonTooltip(
-                    fields=["sigungu_nm", "name"],
-                    aliases=["시군구", "법정동명"]
-                )
-            ).add_to(m)
-
-            # 법정동명 중심점 레이블 (필터된 법정동만)
-            from shapely.geometry import shape as shp_shape
-            label_fg = folium.FeatureGroup(name="법정동명 레이블", show=True)
-            for f in filtered_bj["features"]:
-                try:
-                    centroid = shp_shape(f["geometry"]).centroid
-                    nm = f["properties"].get("name", "")
-                    folium.Marker(
-                        [centroid.y, centroid.x],
-                        icon=folium.DivIcon(
-                            html=f'<div style="font-size:9px;color:#1a5fb4;font-weight:600;white-space:nowrap;text-shadow:0 0 3px #fff,0 0 3px #fff">{nm}</div>',
-                            icon_size=(80, 16),
-                            icon_anchor=(40, 8)
-                        )
-                    ).add_to(label_fg)
-                except Exception:
-                    pass
-            label_fg.add_to(m)
+                # 법정동명 중심점 레이블
+                from shapely.geometry import shape as shp_shape
+                label_fg = folium.FeatureGroup(name="법정동명 레이블", show=True)
+                for f in filtered_features:
+                    try:
+                        centroid = shp_shape(f["geometry"]).centroid
+                        nm = f["properties"].get("name", "")
+                        folium.Marker(
+                            [centroid.y, centroid.x],
+                            icon=folium.DivIcon(
+                                html=f'<div style="font-size:9px;color:#1a5fb4;font-weight:600;white-space:nowrap;text-shadow:0 0 3px #fff,0 0 3px #fff">{nm}</div>',
+                                icon_size=(80, 16),
+                                icon_anchor=(40, 8)
+                            )
+                        ).add_to(label_fg)
+                    except Exception:
+                        pass
+                label_fg.add_to(m)
 
     if show_hangjeong:
         hangjeong_gj = load_hangjeongdong()
