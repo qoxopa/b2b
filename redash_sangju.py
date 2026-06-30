@@ -547,7 +547,10 @@ if not filtered_df.empty:
             {radius:5, color:'#e74c3c', fillColor:'#e74c3c', fillOpacity:0.85, weight:1.5});
     }"""
 
-    _cluster_opts = {"showCoverageOnHover": False}
+    _cluster_opts = {
+        "showCoverageOnHover": False,
+        "polygonOptions": {"weight": 0, "opacity": 0, "fillOpacity": 0}
+    }
     if addr_data:
         FastMarkerCluster(addr_data, callback=GREEN_CB, name="✅ 주소기반 상점", options=_cluster_opts).add_to(m)
     if store_data:
@@ -565,7 +568,17 @@ if not filtered_df.empty:
 
     folium.LayerControl(collapsed=False).add_to(m)
 
-    map_output = st_folium(m, use_container_width=True, height=700, returned_objects=["last_active_drawing"])
+    # 그린 도형 초기화 버튼 (map_key 변경 → 지도 컴포넌트 완전 재마운트)
+    if "map_reset_key" not in st.session_state:
+        st.session_state.map_reset_key = 0
+    if st.button("🗑️ 그린 영역 초기화"):
+        st.session_state.map_reset_key += 1
+
+    map_output = st_folium(
+        m, use_container_width=True, height=700,
+        returned_objects=["last_active_drawing"],
+        key=f"folium_map_{st.session_state.map_reset_key}"
+    )
     st.info("💡 초록: 주소기반 완료 / 빨강: 상점기반(전환 필요) | 우측 ▭/⬡ 도구로 영역 그리기 → 해당 상점 목록 표시\n경계선은 사이드바 체크박스에서 켜세요")
 
     # --- 폴리곤 선택 결과 ---
