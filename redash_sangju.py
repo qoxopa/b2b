@@ -492,9 +492,9 @@ if not filtered_df.empty:
                         folium.Marker(
                             [centroid.y, centroid.x],
                             icon=folium.DivIcon(
-                                html=f'<div style="font-size:9px;color:#1a5fb4;font-weight:600;white-space:nowrap;text-shadow:0 0 3px #fff,0 0 3px #fff">{nm}</div>',
-                                icon_size=(80, 16),
-                                icon_anchor=(40, 8)
+                                html=f'<div style="font-size:9px;color:#1a5fb4;font-weight:600;white-space:nowrap;text-shadow:0 0 3px #fff,0 0 3px #fff">{sig_nm} {nm}</div>',
+                                icon_size=(120, 16),
+                                icon_anchor=(60, 8)
                             )
                         ).add_to(label_fg)
                     except Exception:
@@ -556,8 +556,9 @@ if not filtered_df.empty:
     if store_data:
         FastMarkerCluster(store_data, callback=RED_CB, name="🚨 상점기반 상점", options=_cluster_opts).add_to(m)
 
-    # --- Draw 컨트롤 ---
+    # --- Draw 컨트롤 (좌하단 배치 — 줌/지도 이동 클릭과 겹치지 않도록) ---
     Draw(
+        position="bottomleft",
         export=False,
         draw_options={
             "polyline": False, "circlemarker": False, "marker": False,
