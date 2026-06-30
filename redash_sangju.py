@@ -228,7 +228,7 @@ def load_beopjeongdong():
 def load_hangjeongdong():
     url = (
         "https://raw.githubusercontent.com/vuski/admdongkor"
-        "/master/ver20240101/HangJeongDong_ver20240101.geojson"
+        "/master/ver20260401/HangJeongDong_ver20260401.geojson"
     )
     try:
         return requests.get(url, timeout=90).json()
