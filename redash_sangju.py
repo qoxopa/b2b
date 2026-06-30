@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import json
 import requests
+from pathlib import Path
 import folium
 from folium.plugins import Draw
 from streamlit_folium import st_folium
@@ -214,14 +215,12 @@ def load_sigungu_geojson():
     except Exception:
         return None
 
-@st.cache_data(ttl=86400)
+@st.cache_data
 def load_beopjeongdong():
-    url = (
-        "https://raw.githubusercontent.com/southkorea/southkorea-maps"
-        "/master/kostat/2013/json/skorea_submunicipalities_geo_simple.json"
-    )
+    path = Path(__file__).parent / "assets" / "beopjeongdong.geojson"
     try:
-        return requests.get(url, timeout=30).json()
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
     except Exception:
         return None
 
@@ -460,7 +459,7 @@ if not filtered_df.empty:
             sigungu_set = set(selected_sigungu)
             filtered_features = []
             for f in beopjeong_gj["features"]:
-                code = str(f["properties"].get("code", ""))
+                code = str(f["properties"].get("EMD_CD", ""))
                 sig_nm = sig_lookup.get(code[:5], "")
                 if not sigungu_set or sig_nm in sigungu_set:
                     new_props = dict(f["properties"])
@@ -477,7 +476,7 @@ if not filtered_df.empty:
                     filtered_bj, name="법정동 경계",
                     style_function=lambda f: {"color": "#3a86ff", "weight": 0.8, "fillOpacity": 0.02},
                     tooltip=folium.GeoJsonTooltip(
-                        fields=["sigungu_nm", "name"],
+                        fields=["sigungu_nm", "EMD_NM"],
                         aliases=["시군구", "법정동명"]
                     )
                 ).add_to(m)
@@ -488,7 +487,7 @@ if not filtered_df.empty:
                 for f in filtered_features:
                     try:
                         centroid = shp_shape(f["geometry"]).centroid
-                        nm = f["properties"].get("name", "")
+                        nm = f["properties"].get("EMD_NM", "")
                         folium.Marker(
                             [centroid.y, centroid.x],
                             icon=folium.DivIcon(
