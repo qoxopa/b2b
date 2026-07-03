@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import io
 
 # ==========================================
 # 담당자 매핑 (Redash RegionManager CTE 대체)
@@ -227,8 +228,11 @@ sido_list = sorted(df['시도'].dropna().unique().tolist())
 selected_sido = st.sidebar.multiselect("시도 선택", sido_list, default=sido_list)
 
 sido_filtered_df = df[df['시도'].isin(selected_sido)]
-sigungu_list = sorted(sido_filtered_df['시군구'].dropna().unique().tolist())
-selected_sigungu = st.sidebar.multiselect("시군구 선택", sigungu_list, default=sigungu_list)
+# "시도 시군구" 조합으로 표시 → 인천 중구 / 대전 중구 / 대구 중구를 개별 선택 가능
+sigungu_options = sorted(
+    (sido_filtered_df['시도'].fillna('') + ' ' + sido_filtered_df['시군구'].fillna('')).unique().tolist()
+)
+selected_sigungu_pairs = st.sidebar.multiselect("시군구 선택", sigungu_options, default=sigungu_options)
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("📈 상점 활동성 필터")
@@ -237,11 +241,12 @@ only_active = st.sidebar.checkbox("최근 한 달 주문 발생 상점 보기", 
 # ==========================================
 # 4. 데이터 필터링 적용
 # ==========================================
+_region_key = df['시도'].fillna('') + ' ' + df['시군구'].fillna('')
 filtered_df = df[
     df['상점관리주체(브랜드)'].isin(selected_brands) &
     df['매입타입'].isin(selected_fees) &
     df['시도'].isin(selected_sido) &
-    df['시군구'].isin(selected_sigungu)
+    _region_key.isin(selected_sigungu_pairs)
 ].copy()
 
 # 주문 건수 숫자 변환 및 결측치 처리
@@ -495,8 +500,9 @@ with st.expander("📄 상세 데이터 리스트 보기"):
         '담당자', '최근한달주문건수'
     ]
     available_cols = [c for c in display_cols if c in filtered_df.columns]
+    dl_df = filtered_df[available_cols]
     st.dataframe(
-        filtered_df[available_cols],
+        dl_df,
         column_config={
             "상점관리주체(브랜드)": st.column_config.TextColumn("🏢 브랜드"),
             "고릴라상점코드": st.column_config.TextColumn("고릴라상점코드"),
@@ -519,3 +525,13 @@ with st.expander("📄 상세 데이터 리스트 보기"):
         },
         hide_index=True, use_container_width=True
     )
+    # 다운로드 버튼
+    dl_col1, dl_col2 = st.columns(2)
+    with dl_col1:
+        csv_data = dl_df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
+        st.download_button("📥 CSV 다운로드 (UTF-8 BOM)", csv_data, "상점현황.csv", "text/csv")
+    with dl_col2:
+        xlsx_buf = io.BytesIO()
+        dl_df.to_excel(xlsx_buf, index=False, engine='openpyxl')
+        st.download_button("📥 XLSX 다운로드", xlsx_buf.getvalue(), "상점현황.xlsx",
+                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
