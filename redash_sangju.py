@@ -329,7 +329,7 @@ st.subheader("📍 지도 기준 상점/주소기반 현황 확인")
 
 if not filtered_df.empty:
     map_df = filtered_df.dropna(subset=['lat', 'lon'])
-    fig_map = px.scatter_mapbox(
+    fig_map = px.scatter_map(
         map_df, lat="lat", lon="lon",
         color="매입타입",
         color_discrete_map={"고릴라지역요금제(주소)": "#2ecc71", "배달대행사요금제(상점)": "#e74c3c"},
@@ -337,7 +337,7 @@ if not filtered_df.empty:
         hover_data={"시도": True, "시군구": True, "상점관리주체(브랜드)": False, "상점명": True, "lat": False, "lon": False, "매입타입": False},
         zoom=6, height=700
     )
-    fig_map.update_layout(mapbox_style="carto-positron", margin={"r": 0, "t": 0, "l": 0, "b": 0}, clickmode='event+select', dragmode='pan')
+    fig_map.update_layout(map_style="open-street-map", margin={"r": 0, "t": 0, "l": 0, "b": 0}, clickmode='event+select', dragmode='pan')
     st.plotly_chart(fig_map, use_container_width=True, config={'scrollZoom': True})
     st.info("💡 초록색 점은 주소기반 적용 완료, 빨간색 점은 상점기반 사용 중인 곳입니다.")
 
@@ -515,7 +515,7 @@ with st.expander("📄 상세 데이터 리스트 보기"):
             "총판선차감": st.column_config.NumberColumn("총판선차감"),
             "허브선차감": st.column_config.NumberColumn("허브선차감"),
             "담당자": st.column_config.TextColumn("담당자"),
-            "최근한달주문건수": st.column_config.NumberColumn("배송사별 최근 주문 건수", format="%d 건"),
+            "최근한달주문건수": st.column_config.NumberColumn("최근한달주문건수", format="%d 건"),
         },
         hide_index=True, use_container_width=True
     )
