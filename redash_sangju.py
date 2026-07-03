@@ -175,6 +175,7 @@ def load_data():
         '상점 상태',            # → 상태
         '배송사', '시도', '시군구', '읍면동', '매입타입',
         '매입대행료',           # → 매입대행료(기본)
+        '본사선차감', '본사 선차감',  # Redash 컬럼명 불확실 → 둘 다 시도
         '총판선차감', '허브선차감',
         '최근한달주문건수', '위도(Latitude)', '경도(Longitude)'
     ]
@@ -188,9 +189,13 @@ def load_data():
         '매입대행료':          '매입대행료(기본)',
         '위도(Latitude)':      'lat',   # 위도 = latitude
         '경도(Longitude)':     'lon',   # 경도 = longitude
+        '본사 선차감':          '본사선차감',
     })
     df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
     df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
+    for _col in ['매입대행료(기본)', '본사선차감', '총판선차감', '허브선차감']:
+        if _col in df.columns:
+            df[_col] = pd.to_numeric(df[_col], errors='coerce')
     # dropna는 지도 섹션에서만 적용 — 여기서 날리면 좌표 없는 상점이 집계에서 사라짐
 
     # 담당자 계산: 시도+시군구 → REGION_MANAGER 딕셔너리 조회
@@ -210,6 +215,126 @@ def load_data():
     return df
 
 df = load_data()
+
+
+def generate_survey_excel(input_df):
+    from openpyxl import Workbook
+    from openpyxl.styles import PatternFill, Font, Alignment
+    from openpyxl.utils import get_column_letter
+
+    today = pd.Timestamp.now().strftime('%Y%m%d')
+    df2 = input_df.copy()
+
+    # 문자열 컬럼 NaN 처리
+    for _c in ['시도', '시군구', '읍면동', '상점명', '담당자', '배송사', '상점관리주체(브랜드)']:
+        if _c in df2.columns:
+            df2[_c] = df2[_c].fillna('')
+
+    df2['지역'] = df2['시도'] + ' ' + df2['시군구']
+    df2['_grp'] = df2['지역'] + '||' + df2['상점관리주체(브랜드)']
+
+    store_df = df2[df2['매입타입'] == '배달대행사요금제(상점)'].copy()
+    addr_df  = df2[df2['매입타입'] == '고릴라지역요금제(주소)'].copy()
+
+    # 그룹별 선차감 균일 여부 (pandas 3.x 호환 — apply 회피)
+    if not store_df.empty:
+        grp_stats = store_df.groupby('_grp', observed=True).agg(
+            총판_nunique=('총판선차감', 'nunique'),
+            허브_nunique=('허브선차감', 'nunique'),
+            총판_first=('총판선차감', 'first'),
+            허브_first=('허브선차감', 'first'),
+        )
+        uniform_map = ((grp_stats['총판_nunique'] <= 1) & (grp_stats['허브_nunique'] <= 1)).to_dict()
+        grp_총판 = grp_stats['총판_first'].to_dict()
+        grp_허브  = grp_stats['허브_first'].to_dict()
+    else:
+        uniform_map, grp_총판, grp_허브 = {}, {}, {}
+
+    grp_bpu = (addr_df.groupby('_grp', observed=True)['매입대행료(기본)'].first().to_dict()
+               if not addr_df.empty and '매입대행료(기본)' in addr_df.columns else {})
+
+    def _v(val, default=''):
+        if pd.isna(val) if not isinstance(val, str) else False:
+            return default
+        return val
+
+    def build_row(r):
+        grp = r['_grp']
+        is_store = r['매입타입'] == '배달대행사요금제(상점)'
+        uniform  = uniform_map.get(grp, False)
+        return {
+            '지역':              r['지역'],
+            '읍면동':            r['읍면동'],
+            '브랜드':            r['상점관리주체(브랜드)'],
+            '구분':              '상점' if is_store else '주소',
+            '상점명':            r['상점명'],
+            '담당자':            r.get('담당자') or '',
+            '배대사':            r['배송사'],
+            '최근1달완료건수':   _v(r.get('최근한달주문건수'), 0),
+            '매입금액(현재)':    _v(r.get('매입대행료(기본)')),
+            '본사선차감(현재)':  _v(r.get('본사선차감')),
+            '총판선차감(현재)':  _v(r.get('총판선차감')),
+            '허브선차감(현재)':  _v(r.get('허브선차감')),
+            '선차감_상이여부':   ('O' if uniform else 'X') if is_store else '',
+            '변경매입(BPU)':    _v(grp_bpu.get(grp)) if is_store else '',
+            '총판선차감(최종)':  _v(grp_총판.get(grp)) if (is_store and uniform) else '',
+            '허브선차감(최종)':  _v(grp_허브.get(grp)) if (is_store and uniform) else '',
+            '비고':              '',
+        }
+
+    df2['_sort_구분'] = (df2['매입타입'] == '배달대행사요금제(상점)').astype(int)
+    df2 = df2.sort_values(['지역', '상점관리주체(브랜드)', '_sort_구분', '상점명'])
+
+    rows = [build_row(r) for _, r in df2.iterrows()]
+    if not rows:
+        return None, None
+
+    COLS = list(rows[0].keys())
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = '조사시트'
+
+    YELLOW = PatternFill('solid', fgColor='FFFF00')
+    BLUE   = PatternFill('solid', fgColor='D9E1F2')
+    HEADER = PatternFill('solid', fgColor='2F5496')
+    H_FONT = Font(bold=True, color='FFFFFF')
+
+    for ci, col in enumerate(COLS, 1):
+        cell = ws.cell(row=1, column=ci, value=col)
+        cell.fill = HEADER
+        cell.font = H_FONT
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+    for ri, row in enumerate(rows, 2):
+        is_store_row = row['구분'] == '상점'
+        is_bad       = row['선차감_상이여부'] == 'X'
+        for ci, col in enumerate(COLS, 1):
+            cell = ws.cell(row=ri, column=ci, value=row[col])
+            cell.alignment = Alignment(vertical='center')
+            if not is_store_row:
+                cell.fill = BLUE
+            elif is_bad:
+                cell.fill = YELLOW
+
+    col_widths = {
+        '지역': 16, '읍면동': 10, '브랜드': 14, '구분': 7,
+        '상점명': 28, '담당자': 8, '배대사': 8, '최근1달완료건수': 12,
+        '매입금액(현재)': 11, '본사선차감(현재)': 11,
+        '총판선차감(현재)': 11, '허브선차감(현재)': 11,
+        '선차감_상이여부': 10, '변경매입(BPU)': 11,
+        '총판선차감(최종)': 11, '허브선차감(최종)': 11, '비고': 20,
+    }
+    for ci, col in enumerate(COLS, 1):
+        ws.column_dimensions[get_column_letter(ci)].width = col_widths.get(col, 12)
+
+    ws.freeze_panes = 'A2'
+    ws.row_dimensions[1].height = 32
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue(), f'조사파일_{today}.xlsx'
+
 
 # ==========================================
 # 3. 사이드바 - 스마트 필터 설정
@@ -535,3 +660,24 @@ with st.expander("📄 상세 데이터 리스트 보기"):
         dl_df.to_excel(xlsx_buf, index=False, engine='openpyxl')
         st.download_button("📥 XLSX 다운로드", xlsx_buf.getvalue(), "상점현황.xlsx",
                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+# ==========================================
+# [순서 8] 🔍 현장 조사 파일 생성
+# ==========================================
+st.markdown("---")
+st.subheader("🔍 현장 조사 파일 생성")
+st.caption("상점기반 → 주소기반 전환을 위한 현장 조사용 Excel 파일을 생성합니다. (현재 필터 기준 적용)")
+
+if st.button("📋 조사 파일 생성", type="primary"):
+    with st.spinner("조사 파일 생성 중..."):
+        xlsx_bytes, fname = generate_survey_excel(filtered_df)
+    if xlsx_bytes is None:
+        st.warning("조건에 맞는 데이터가 없습니다.")
+    else:
+        st.download_button(
+            "⬇️ 조사 파일 다운로드",
+            data=xlsx_bytes,
+            file_name=fname,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        st.success(f"✅ {fname} 생성 완료 — 노란색 행은 선차감 상이(X), 파란색 행은 주소기반 참조입니다.")
