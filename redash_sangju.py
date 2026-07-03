@@ -528,7 +528,7 @@ with st.expander("📄 상세 데이터 리스트 보기"):
     # 다운로드 버튼
     dl_col1, dl_col2 = st.columns(2)
     with dl_col1:
-        csv_data = dl_df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
+        csv_data = dl_df.to_csv(index=False).encode('utf-8-sig')
         st.download_button("📥 CSV 다운로드 (UTF-8 BOM)", csv_data, "상점현황.csv", "text/csv")
     with dl_col2:
         xlsx_buf = io.BytesIO()
