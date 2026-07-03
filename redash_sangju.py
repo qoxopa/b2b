@@ -477,14 +477,15 @@ if not filtered_df.empty:
             fig_map = px.scatter_map(
                 map_df, lat="lat", lon="lon",
                 color="매입타입",
-                color_discrete_map={"고릴라지역요금제(주소)": "#2ecc71", "배달대행사요금제(상점)": "#e74c3c"},
+                color_discrete_map={"고릴라지역요금제(주소)": "#1E90FF", "배달대행사요금제(상점)": "#FF6600"},
                 hover_name="상점관리주체(브랜드)",
                 hover_data={"시도": True, "시군구": True, "상점관리주체(브랜드)": False, "상점명": True, "lat": False, "lon": False, "매입타입": False},
                 zoom=6, height=700, center={"lat": 36.5, "lon": 127.8}
             )
+            fig_map.update_traces(marker=dict(size=9, opacity=0.9))
             fig_map.update_layout(map_style="open-street-map", margin={"r": 0, "t": 0, "l": 0, "b": 0}, clickmode='event+select', dragmode='pan')
             st.plotly_chart(fig_map, use_container_width=True, config={'scrollZoom': True})
-    st.info("💡 초록색 점은 주소기반 적용 완료, 빨간색 점은 상점기반 사용 중인 곳입니다.")
+    st.info("💡 파란색 점은 주소기반 적용 완료, 주황색 점은 상점기반 사용 중인 곳입니다.")
 
 # ==========================================
 # [순서 4] ✅ 요금제 현황 리스트 (시도 단위)
