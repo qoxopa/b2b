@@ -191,8 +191,10 @@ def load_data():
         '경도(Longitude)':     'lon',   # 경도 = longitude
         '본사 선차감':          '본사선차감',
     })
-    df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
-    df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
+    if 'lat' in df.columns:
+        df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
+    if 'lon' in df.columns:
+        df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
     for _col in ['매입대행료(기본)', '본사선차감', '총판선차감', '허브선차감']:
         if _col in df.columns:
             df[_col] = pd.to_numeric(df[_col], errors='coerce')
@@ -458,17 +460,30 @@ st.markdown("---")
 st.subheader("📍 지도 기준 상점/주소기반 현황 확인")
 
 if not filtered_df.empty:
-    map_df = filtered_df.dropna(subset=['lat', 'lon'])
-    fig_map = px.scatter_map(
-        map_df, lat="lat", lon="lon",
-        color="매입타입",
-        color_discrete_map={"고릴라지역요금제(주소)": "#2ecc71", "배달대행사요금제(상점)": "#e74c3c"},
-        hover_name="상점관리주체(브랜드)",
-        hover_data={"시도": True, "시군구": True, "상점관리주체(브랜드)": False, "상점명": True, "lat": False, "lon": False, "매입타입": False},
-        zoom=6, height=700
-    )
-    fig_map.update_layout(map_style="open-street-map", margin={"r": 0, "t": 0, "l": 0, "b": 0}, clickmode='event+select', dragmode='pan')
-    st.plotly_chart(fig_map, use_container_width=True, config={'scrollZoom': True})
+    _has_latlon = 'lat' in filtered_df.columns and 'lon' in filtered_df.columns
+    if not _has_latlon:
+        st.warning("⚠️ Google Sheets에 위도/경도 컬럼이 없어 지도를 표시할 수 없습니다.")
+    else:
+        map_df = filtered_df.dropna(subset=['lat', 'lon'])
+        if map_df.empty:
+            st.warning("⚠️ 위도/경도 값이 있는 상점 데이터가 없습니다.")
+        else:
+            # 한국 위도 유효 범위 체크 (33~38°N) — 데이터 내 값이 뒤바뀐 경우 자동 교정
+            _lat_med = map_df['lat'].median()
+            if not (28 <= _lat_med <= 45):
+                map_df = map_df.copy()
+                map_df['lat'], map_df['lon'] = map_df['lon'].copy(), map_df['lat'].copy()
+                st.caption(f"ℹ️ 위도/경도 데이터 값이 뒤바뀐 것을 감지해 자동 교정했습니다. (원본 lat 중앙값: {_lat_med:.1f})")
+            fig_map = px.scatter_map(
+                map_df, lat="lat", lon="lon",
+                color="매입타입",
+                color_discrete_map={"고릴라지역요금제(주소)": "#2ecc71", "배달대행사요금제(상점)": "#e74c3c"},
+                hover_name="상점관리주체(브랜드)",
+                hover_data={"시도": True, "시군구": True, "상점관리주체(브랜드)": False, "상점명": True, "lat": False, "lon": False, "매입타입": False},
+                zoom=6, height=700, center={"lat": 36.5, "lon": 127.8}
+            )
+            fig_map.update_layout(map_style="open-street-map", margin={"r": 0, "t": 0, "l": 0, "b": 0}, clickmode='event+select', dragmode='pan')
+            st.plotly_chart(fig_map, use_container_width=True, config={'scrollZoom': True})
     st.info("💡 초록색 점은 주소기반 적용 완료, 빨간색 점은 상점기반 사용 중인 곳입니다.")
 
 # ==========================================
