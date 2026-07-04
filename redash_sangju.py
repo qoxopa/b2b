@@ -169,6 +169,7 @@ def load_data():
     # 실제 Google Sheets 컬럼명으로 필요한 컬럼 선택 후 내부명으로 정규화
     keep_cols = [
         '상점관리주체(브랜드)',
+        '지역',                 # 시도+시군구 사전 결합값 (조사파일용)
         '고릴라 상점 아이디',   # → 고릴라상점코드
         '최신 타임라인 날짜',   # → 최신타임라인날짜
         '고릴라 상점명',        # → 상점명
@@ -227,18 +228,22 @@ def generate_survey_excel(input_df):
     today = pd.Timestamp.now().strftime('%Y%m%d')
     df2 = input_df.copy()
 
-    # 문자열 컬럼 NaN 처리
-    for _c in ['시도', '시군구', '읍면동', '상점명', '담당자', '배송사', '상점관리주체(브랜드)']:
+    for _c in ['시도', '시군구', '상점명', '담당자', '배송사', '상점관리주체(브랜드)']:
         if _c in df2.columns:
             df2[_c] = df2[_c].fillna('')
 
-    df2['지역'] = df2['시도'] + ' ' + df2['시군구']
-    df2['_grp'] = df2['지역'] + '||' + df2['상점관리주체(브랜드)']
+    # 지역 컬럼: 원본 있으면 그대로, 없으면 시도+시군구 (공백 없이)
+    if '지역' in df2.columns and df2['지역'].notna().any():
+        df2['_지역'] = df2['지역'].fillna('')
+    else:
+        df2['_지역'] = df2['시도'] + df2['시군구']
+
+    df2['_grp'] = df2['_지역'] + '||' + df2['상점관리주체(브랜드)']
 
     store_df = df2[df2['매입타입'] == '배달대행사요금제(상점)'].copy()
     addr_df  = df2[df2['매입타입'] == '고릴라지역요금제(주소)'].copy()
 
-    # 그룹별 선차감 균일 여부 (pandas 3.x 호환 — apply 회피)
+    # 그룹별 선차감 균일 여부 (pandas 3.x 호환)
     if not store_df.empty:
         grp_stats = store_df.groupby('_grp', observed=True).agg(
             총판_nunique=('총판선차감', 'nunique'),
@@ -256,38 +261,48 @@ def generate_survey_excel(input_df):
                if not addr_df.empty and '매입대행료(기본)' in addr_df.columns else {})
 
     def _v(val, default=''):
-        if pd.isna(val) if not isinstance(val, str) else False:
+        if not isinstance(val, str) and pd.isna(val):
             return default
         return val
 
-    def build_row(r):
-        grp = r['_grp']
+    def _차액(bpu, current):
+        if bpu == '' or (not isinstance(bpu, str) and pd.isna(bpu)):
+            return ''
+        try:
+            return float(bpu) - float(current)
+        except Exception:
+            return ''
+
+    def build_row(r, no):
+        grp     = r['_grp']
         is_store = r['매입타입'] == '배달대행사요금제(상점)'
         uniform  = uniform_map.get(grp, False)
+        bpu      = _v(grp_bpu.get(grp)) if is_store else ''
+        current  = _v(r.get('매입대행료(기본)'))
         return {
-            '지역':              r['지역'],
-            '읍면동':            r['읍면동'],
-            '브랜드':            r['상점관리주체(브랜드)'],
-            '구분':              '상점' if is_store else '주소',
-            '상점명':            r['상점명'],
-            '담당자':            r.get('담당자') or '',
-            '배대사':            r['배송사'],
-            '최근1달완료건수':   _v(r.get('최근한달주문건수'), 0),
-            '매입금액(현재)':    _v(r.get('매입대행료(기본)')),
-            '본사선차감(현재)':  _v(r.get('본사선차감')),
-            '총판선차감(현재)':  _v(r.get('총판선차감')),
-            '허브선차감(현재)':  _v(r.get('허브선차감')),
-            '선차감_상이여부':   ('O' if uniform else 'X') if is_store else '',
-            '변경매입(BPU)':    _v(grp_bpu.get(grp)) if is_store else '',
-            '총판선차감(최종)':  _v(grp_총판.get(grp)) if (is_store and uniform) else '',
-            '허브선차감(최종)':  _v(grp_허브.get(grp)) if (is_store and uniform) else '',
-            '비고':              '',
+            'No':               no,
+            '지역':             r['_지역'],
+            '브랜드':           r['상점관리주체(브랜드)'],
+            '구분':             '상점' if is_store else '주소',
+            '상점명':           r.get('상점명', ''),
+            '담당자':           r.get('담당자') or '',
+            '배대사':           r.get('배송사', ''),
+            '최근1달완료건수':  _v(r.get('최근한달주문건수'), 0),
+            '매입금액(현재)':   current,
+            '총판선차감(현재)': _v(r.get('총판선차감')),
+            '허브선차감(현재)': _v(r.get('허브선차감')),
+            '선차감_상이여부':  ('X' if uniform else 'O') if is_store else '-',
+            '매입차액':         _차액(bpu, current),
+            '변경매입(3PL)':   bpu,
+            '매입차액유지여부': '',
+            '총판선차감(최종)': _v(grp_총판.get(grp)) if (is_store and uniform) else '',
+            '허브선차감(최종)': _v(grp_허브.get(grp)) if (is_store and uniform) else '',
         }
 
     df2['_sort_구분'] = (df2['매입타입'] == '배달대행사요금제(상점)').astype(int)
-    df2 = df2.sort_values(['지역', '상점관리주체(브랜드)', '_sort_구분', '상점명'])
+    df2 = df2.sort_values(['_지역', '상점관리주체(브랜드)', '_sort_구분', '상점명'])
 
-    rows = [build_row(r) for _, r in df2.iterrows()]
+    rows = [build_row(r, i + 1) for i, (_, r) in enumerate(df2.iterrows())]
     if not rows:
         return None, None
 
@@ -310,7 +325,7 @@ def generate_survey_excel(input_df):
 
     for ri, row in enumerate(rows, 2):
         is_store_row = row['구분'] == '상점'
-        is_bad       = row['선차감_상이여부'] == 'X'
+        is_bad       = row['선차감_상이여부'] == 'O'
         for ci, col in enumerate(COLS, 1):
             cell = ws.cell(row=ri, column=ci, value=row[col])
             cell.alignment = Alignment(vertical='center')
@@ -320,18 +335,28 @@ def generate_survey_excel(input_df):
                 cell.fill = YELLOW
 
     col_widths = {
-        '지역': 16, '읍면동': 10, '브랜드': 14, '구분': 7,
+        'No': 5, '지역': 14, '브랜드': 14, '구분': 6,
         '상점명': 28, '담당자': 8, '배대사': 8, '최근1달완료건수': 12,
-        '매입금액(현재)': 11, '본사선차감(현재)': 11,
-        '총판선차감(현재)': 11, '허브선차감(현재)': 11,
-        '선차감_상이여부': 10, '변경매입(BPU)': 11,
-        '총판선차감(최종)': 11, '허브선차감(최종)': 11, '비고': 20,
+        '매입금액(현재)': 11, '총판선차감(현재)': 11, '허브선차감(현재)': 11,
+        '선차감_상이여부': 10, '매입차액': 10, '변경매입(3PL)': 11,
+        '매입차액유지여부': 12, '총판선차감(최종)': 11, '허브선차감(최종)': 11,
     }
     for ci, col in enumerate(COLS, 1):
         ws.column_dimensions[get_column_letter(ci)].width = col_widths.get(col, 12)
 
     ws.freeze_panes = 'A2'
     ws.row_dimensions[1].height = 32
+
+    # raw 시트: 원본 데이터
+    ws_raw = wb.create_sheet('raw')
+    raw_cols = list(input_df.columns)
+    for ci, col in enumerate(raw_cols, 1):
+        cell = ws_raw.cell(row=1, column=ci, value=col)
+        cell.fill = HEADER
+        cell.font = H_FONT
+    for ri, row_data in enumerate(input_df.itertuples(index=False), 2):
+        for ci, val in enumerate(row_data, 1):
+            ws_raw.cell(row=ri, column=ci, value=val)
 
     buf = io.BytesIO()
     wb.save(buf)
