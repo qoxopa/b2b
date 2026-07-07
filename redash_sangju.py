@@ -257,8 +257,9 @@ def generate_survey_excel(input_df):
     else:
         uniform_map, grp_총판, grp_허브 = {}, {}, {}
 
-    grp_bpu = (addr_df.groupby('_grp', observed=True)['매입대행료(기본)'].first().to_dict()
-               if not addr_df.empty and '매입대행료(기본)' in addr_df.columns else {})
+    # 그룹 내 매입금액(현재) 최솟값 → 변경매입(3PL) 기준
+    grp_min_매입 = (df2.groupby('_grp', observed=True)['매입대행료(기본)'].min().to_dict()
+                    if '매입대행료(기본)' in df2.columns else {})
 
     def _v(val, default=''):
         if not isinstance(val, str) and pd.isna(val):
@@ -274,11 +275,11 @@ def generate_survey_excel(input_df):
             return ''
 
     def build_row(r, no):
-        grp     = r['_grp']
+        grp      = r['_grp']
         is_store = r['매입타입'] == '배달대행사요금제(상점)'
         uniform  = uniform_map.get(grp, False)
-        bpu      = _v(grp_bpu.get(grp)) if is_store else ''
         current  = _v(r.get('매입대행료(기본)'))
+        min_매입  = _v(grp_min_매입.get(grp)) if is_store else ''
         return {
             'No':               no,
             '지역':             r['_지역'],
@@ -292,9 +293,8 @@ def generate_survey_excel(input_df):
             '총판선차감(현재)': _v(r.get('총판선차감')),
             '허브선차감(현재)': _v(r.get('허브선차감')),
             '선차감_상이여부':  ('X' if uniform else 'O') if is_store else '-',
-            '매입차액':         _차액(bpu, current),
-            '변경매입(3PL)':   bpu,
-            '매입차액유지여부': '',
+            '매입차액':         _차액(min_매입, current),
+            '변경매입(3PL)':   min_매입,
             '총판선차감(최종)': _v(grp_총판.get(grp)) if (is_store and uniform) else '',
             '허브선차감(최종)': _v(grp_허브.get(grp)) if (is_store and uniform) else '',
         }
@@ -339,7 +339,7 @@ def generate_survey_excel(input_df):
         '상점명': 28, '담당자': 8, '배대사': 8, '최근1달완료건수': 12,
         '매입금액(현재)': 11, '총판선차감(현재)': 11, '허브선차감(현재)': 11,
         '선차감_상이여부': 10, '매입차액': 10, '변경매입(3PL)': 11,
-        '매입차액유지여부': 12, '총판선차감(최종)': 11, '허브선차감(최종)': 11,
+        '총판선차감(최종)': 11, '허브선차감(최종)': 11,
     }
     for ci, col in enumerate(COLS, 1):
         ws.column_dimensions[get_column_letter(ci)].width = col_widths.get(col, 12)
