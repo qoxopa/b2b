@@ -178,25 +178,29 @@ def load_data():
         '매입대행료',           # → 매입대행료(기본)
         '본사선차감', '본사 선차감',  # Redash 컬럼명 불확실 → 둘 다 시도
         '총판선차감', '허브선차감',
-        '최근한달주문건수', '위도(Latitude)', '경도(Longitude)'
+        '최근 1달 주문 건수(상점전체)',  # → 최근한달주문건수
+        '최근 1달 수행 건수(배대사별)',  # → 최근한달수행건수
+        '위도(Latitude)', '경도(Longitude)'
     ]
     df = df[[c for c in keep_cols if c in df.columns]]
 
     df = df.rename(columns={
-        '고릴라 상점 아이디': '고릴라상점코드',
-        '최신 타임라인 날짜':  '최신타임라인날짜',
-        '고릴라 상점명':       '상점명',
-        '상점 상태':           '상태',
-        '매입대행료':          '매입대행료(기본)',
-        '위도(Latitude)':      'lat',   # 위도 = latitude
-        '경도(Longitude)':     'lon',   # 경도 = longitude
-        '본사 선차감':          '본사선차감',
+        '고릴라 상점 아이디':           '고릴라상점코드',
+        '최신 타임라인 날짜':           '최신타임라인날짜',
+        '고릴라 상점명':               '상점명',
+        '상점 상태':                   '상태',
+        '매입대행료':                  '매입대행료(기본)',
+        '위도(Latitude)':              'lat',
+        '경도(Longitude)':             'lon',
+        '본사 선차감':                  '본사선차감',
+        '최근 1달 주문 건수(상점전체)': '최근한달주문건수',
+        '최근 1달 수행 건수(배대사별)': '최근한달수행건수',
     })
     if 'lat' in df.columns:
         df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
     if 'lon' in df.columns:
         df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
-    for _col in ['매입대행료(기본)', '본사선차감', '총판선차감', '허브선차감']:
+    for _col in ['매입대행료(기본)', '본사선차감', '총판선차감', '허브선차감', '최근한달주문건수', '최근한달수행건수']:
         if _col in df.columns:
             df[_col] = pd.to_numeric(df[_col], errors='coerce')
     # dropna는 지도 섹션에서만 적용 — 여기서 날리면 좌표 없는 상점이 집계에서 사라짐
@@ -220,7 +224,7 @@ def load_data():
 df = load_data()
 
 
-def generate_survey_excel(input_df):
+def generate_survey_excel(input_df, region_label='전체'):
     from openpyxl import Workbook
     from openpyxl.styles import PatternFill, Font, Alignment
     from openpyxl.utils import get_column_letter
@@ -289,7 +293,7 @@ def generate_survey_excel(input_df):
             '상점명':           r.get('상점명', ''),
             '담당자':           r.get('담당자') or '',
             '배대사':           r.get('배송사', ''),
-            '최근1달완료건수':  _v(r.get('최근한달주문건수'), 0),
+            '최근1달완료건수':  _v(r.get('최근한달수행건수') if pd.notna(r.get('최근한달수행건수')) else r.get('최근한달주문건수'), 0),
             '매입금액(현재)':   current,
             '총판선차감(현재)': _v(r.get('총판선차감')),
             '허브선차감(현재)': _v(r.get('허브선차감')),
@@ -382,7 +386,7 @@ def generate_survey_excel(input_df):
 
     buf = io.BytesIO()
     wb.save(buf)
-    return buf.getvalue(), f'조사파일_{today}.xlsx'
+    return buf.getvalue(), f'주소기반전환_조사파일_{region_label}_{today}.xlsx'
 
 
 # ==========================================
@@ -428,6 +432,10 @@ if '최근한달주문건수' not in filtered_df.columns:
     filtered_df['최근한달주문건수'] = 0
 else:
     filtered_df['최근한달주문건수'] = pd.to_numeric(filtered_df['최근한달주문건수'], errors='coerce').fillna(0)
+if '최근한달수행건수' not in filtered_df.columns:
+    filtered_df['최근한달수행건수'] = 0
+else:
+    filtered_df['최근한달수행건수'] = pd.to_numeric(filtered_df['최근한달수행건수'], errors='coerce').fillna(0)
 
 if only_active:
     filtered_df = filtered_df[filtered_df['최근한달주문건수'] >= 1]
@@ -753,7 +761,16 @@ st.caption("상점기반 → 주소기반 전환을 위한 현장 조사용 Exce
 
 if st.button("📋 조사 파일 생성", type="primary"):
     with st.spinner("조사 파일 생성 중..."):
-        xlsx_bytes, fname = generate_survey_excel(filtered_df)
+        # 파일명용 지역명 결정
+        if len(selected_sigungu_pairs) == 1:
+            _rlabel = selected_sigungu_pairs[0].replace(' ', '')
+        elif len(selected_sido) == 1:
+            _rlabel = selected_sido[0]
+        elif len(selected_sido) <= 2:
+            _rlabel = '_'.join(selected_sido)
+        else:
+            _rlabel = selected_sido[0] + '외'
+        xlsx_bytes, fname = generate_survey_excel(filtered_df, _rlabel)
     if xlsx_bytes is None:
         st.warning("조건에 맞는 데이터가 없습니다.")
     else:
