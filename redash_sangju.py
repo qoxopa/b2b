@@ -508,7 +508,27 @@ if not filtered_df.empty:
                 zoom=6, height=700, center={"lat": 36.5, "lon": 127.8}
             )
             fig_map.update_traces(marker=dict(size=9, opacity=0.9))
-            fig_map.update_layout(map_style="open-street-map", margin={"r": 0, "t": 0, "l": 0, "b": 0}, clickmode='event+select', dragmode='pan')
+            fig_map.update_layout(
+                map=dict(
+                    style="open-street-map",
+                    layers=[{
+                        "below": "traces",
+                        "sourcetype": "geojson",
+                        "source": {
+                            "type": "Feature",
+                            "geometry": {
+                                "type": "Polygon",
+                                "coordinates": [[[-180, -90], [180, -90], [180, 90], [-180, 90], [-180, -90]]]
+                            }
+                        },
+                        "type": "fill",
+                        "color": "rgba(255, 255, 255, 0.45)"
+                    }]
+                ),
+                margin={"r": 0, "t": 0, "l": 0, "b": 0},
+                clickmode='event+select',
+                dragmode='pan'
+            )
             st.plotly_chart(fig_map, use_container_width=True, config={'scrollZoom': True})
     st.info("💡 파란색 점은 주소기반 적용 완료, 주황색 점은 상점기반 사용 중인 곳입니다.")
 
