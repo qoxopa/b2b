@@ -262,8 +262,8 @@ def generate_survey_excel(input_df, region_label='전체'):
     else:
         uniform_map, grp_총판, grp_허브 = {}, {}, {}
 
-    # 그룹 내 매입금액(현재) 최솟값 → 변경매입(3PL) 기준
-    grp_min_매입 = (df2.groupby('_grp', observed=True)['매입대행료(기본)'].min().to_dict()
+    # 변경매입(3PL): 지역+브랜드+배대사 기준 최솟값 (배대사별 독립 계산)
+    grp_min_매입 = (df2.groupby('_color_grp', observed=True)['매입대행료(기본)'].min().to_dict()
                     if '매입대행료(기본)' in df2.columns else {})
 
     def _v(val, default=''):
@@ -281,10 +281,11 @@ def generate_survey_excel(input_df, region_label='전체'):
 
     def build_row(r, no):
         grp      = r['_grp']
+        cgrp     = r['_color_grp']   # 지역+브랜드+배대사
         is_store = r['매입타입'] == '배달대행사요금제(상점)'
         uniform  = uniform_map.get(grp, False)
         current  = _v(r.get('매입대행료(기본)'))
-        min_매입  = _v(grp_min_매입.get(grp)) if is_store else ''
+        min_매입  = _v(grp_min_매입.get(cgrp)) if is_store else ''
         return {
             'No':               no,
             '지역':             r['_지역'],
