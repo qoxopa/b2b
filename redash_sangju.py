@@ -238,7 +238,8 @@ def generate_survey_excel(input_df):
     else:
         df2['_지역'] = df2['시도'] + df2['시군구']
 
-    df2['_grp'] = df2['_지역'] + '||' + df2['상점관리주체(브랜드)']
+    df2['_grp']       = df2['_지역'] + '||' + df2['상점관리주체(브랜드)']
+    df2['_color_grp'] = df2['_지역'] + '||' + df2['상점관리주체(브랜드)'] + '||' + df2['배송사'].fillna('')
 
     store_df = df2[df2['매입타입'] == '배달대행사요금제(상점)'].copy()
     addr_df  = df2[df2['매입타입'] == '고릴라지역요금제(주소)'].copy()
@@ -300,7 +301,16 @@ def generate_survey_excel(input_df):
         }
 
     df2['_sort_구분'] = (df2['매입타입'] == '배달대행사요금제(상점)').astype(int)
-    df2 = df2.sort_values(['_지역', '상점관리주체(브랜드)', '_sort_구분', '상점명'])
+    df2 = df2.sort_values(['_지역', '상점관리주체(브랜드)', '배송사', '_sort_구분', '상점명'])
+
+    # 색상 교대: 정렬 후 등장 순서로 0, 1, 2... 부여
+    grp_order: dict = {}
+    _gi = 0
+    for _cg in df2['_color_grp']:
+        if _cg not in grp_order:
+            grp_order[_cg] = _gi
+            _gi += 1
+    color_grps = df2['_color_grp'].tolist()
 
     rows = [build_row(r, i + 1) for i, (_, r) in enumerate(df2.iterrows())]
     if not rows:
@@ -312,27 +322,39 @@ def generate_survey_excel(input_df):
     ws = wb.active
     ws.title = '조사시트'
 
-    YELLOW = PatternFill('solid', fgColor='FFFF00')
-    BLUE   = PatternFill('solid', fgColor='D9E1F2')
-    HEADER = PatternFill('solid', fgColor='2F5496')
-    H_FONT = Font(bold=True, color='FFFFFF')
+    BLUE_GRP  = PatternFill('solid', fgColor='DAE3F3')  # 연한 파랑 (그룹 홀수)
+    GREEN_GRP = PatternFill('solid', fgColor='E2EFDA')  # 연한 초록 (그룹 짝수)
+    ADDR_FILL = PatternFill('solid', fgColor='BDD7EE')  # 주소기반 행 (중간 파랑)
+    INPUT_REQ = PatternFill('solid', fgColor='FCE4D6')  # 입력 필요 셀 (연한 주황)
+    HEADER    = PatternFill('solid', fgColor='2F5496')
+    H_FONT    = Font(bold=True, color='FFFFFF')
+
+    # 헤더 표시 문구 (O, P열 부연설명 포함)
+    HEADER_LABELS = {
+        '총판선차감(최종)': '총판선차감\n(최종)\n[X→자동입력\nO→직접기재]',
+        '허브선차감(최종)': '허브선차감\n(최종)\n[X→자동입력\nO→직접기재]',
+    }
+    INPUT_COLS = {'총판선차감(최종)', '허브선차감(최종)'}
 
     for ci, col in enumerate(COLS, 1):
-        cell = ws.cell(row=1, column=ci, value=col)
+        cell = ws.cell(row=1, column=ci, value=HEADER_LABELS.get(col, col))
         cell.fill = HEADER
         cell.font = H_FONT
         cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
-    for ri, row in enumerate(rows, 2):
+    for ri, (row, cgrp) in enumerate(zip(rows, color_grps), 2):
         is_store_row = row['구분'] == '상점'
-        is_bad       = row['선차감_상이여부'] == 'O'
+        is_O_row     = row['선차감_상이여부'] == 'O'
+        base_fill    = (BLUE_GRP if grp_order[cgrp] % 2 == 0 else GREEN_GRP) if is_store_row else ADDR_FILL
+
         for ci, col in enumerate(COLS, 1):
             cell = ws.cell(row=ri, column=ci, value=row[col])
             cell.alignment = Alignment(vertical='center')
-            if not is_store_row:
-                cell.fill = BLUE
-            elif is_bad:
-                cell.fill = YELLOW
+            # 입력 필요 셀: 상이(O) 상점기반 행의 최종선차감 빈칸
+            if is_store_row and is_O_row and col in INPUT_COLS and row[col] == '':
+                cell.fill = INPUT_REQ
+            else:
+                cell.fill = base_fill
 
     col_widths = {
         'No': 5, '지역': 14, '브랜드': 14, '구분': 6,
@@ -345,7 +367,7 @@ def generate_survey_excel(input_df):
         ws.column_dimensions[get_column_letter(ci)].width = col_widths.get(col, 12)
 
     ws.freeze_panes = 'A2'
-    ws.row_dimensions[1].height = 32
+    ws.row_dimensions[1].height = 60
 
     # raw 시트: 원본 데이터
     ws_raw = wb.create_sheet('raw')
